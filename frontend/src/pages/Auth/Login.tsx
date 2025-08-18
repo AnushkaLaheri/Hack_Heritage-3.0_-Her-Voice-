@@ -93,11 +93,13 @@ const Login: React.FC = () => {
         login({ email: formData.email, password: formData.password })
       );
       if (login.fulfilled.match(result)) {
+        const token = result.payload.access_token; // adjust if your thunk returns { access_token, user }
+        localStorage.setItem('token', token);
         navigate('/');
       }
     }
   };
-
+  
   // Aadhaar OTP send
   const handleAadhaarLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -172,7 +174,7 @@ const Login: React.FC = () => {
     }
   };
 
-  // Verify PAN OTP
+
   const verifyPanOtp = async () => {
     if (!otpValue) return;
     try {

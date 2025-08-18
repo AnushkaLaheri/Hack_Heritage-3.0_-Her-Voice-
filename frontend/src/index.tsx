@@ -7,6 +7,13 @@ import CssBaseline from '@mui/material/CssBaseline';
 import { GoogleOAuthProvider } from '@react-oauth/google'; // ✅ import Google OAuth provider
 import { store } from './store/index';
 import App from './App';
+import axios from 'axios';
+
+// Set Axios default Authorization header if token exists
+const token = localStorage.getItem('token');
+if (token) {
+  axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+}
 
 const theme = createTheme({
   palette: {

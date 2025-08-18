@@ -1,90 +1,90 @@
-import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import axios from 'axios';
+import { createSlice, createAsyncThunk, PayloadAction } from "@reduxjs/toolkit";
+import axios from "axios";
 
-interface Post {
+// Comment type
+export interface CommentType {
+  author: string | null;
+  content: string;
+  created_at: string;
+}
+
+// Post type
+export interface Post {
   id: number;
   title: string;
   content: string;
   category: string;
-  is_anonymous: boolean;
   author: string;
-  likes: number;
   created_at: string;
+  image_url?: string;
+  is_anonymous: boolean;
+  likes: number;
   comments_count: number;
+  latest_comments: CommentType[]; // ✅ optional from API
 }
 
 interface PostsState {
   posts: Post[];
+  totalPages: number;
+  currentPage: number;
   loading: boolean;
   error: string | null;
-  total: number;
-  currentPage: number;
-  totalPages: number;
 }
 
 const initialState: PostsState = {
   posts: [],
+  totalPages: 1,
+  currentPage: 1,
   loading: false,
   error: null,
-  total: 0,
-  currentPage: 1,
-  totalPages: 1,
 };
 
-export const fetchPosts = createAsyncThunk(
-  'posts/fetchPosts',
-  async (params: { category?: string; page?: number; per_page?: number }) => {
-    const response = await axios.get('/api/posts', { params });
-    return response.data;
-  }
-);
+// ✅ Thunk for fetching posts
+export const fetchPosts = createAsyncThunk<
+  { posts: Post[]; total_pages: number; current_page: number },
+  { page: number; per_page: number },
+  { rejectValue: string }
+>(
+  "posts/fetchPosts",
+  async ({ page, per_page }, { rejectWithValue }) => {
+    try {
+      const token = localStorage.getItem("token");
+      const response = await axios.get(`/api/posts?page=${page}&per_page=${per_page}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
 
-export const createPost = createAsyncThunk(
-  'posts/createPost',
-  async (postData: {
-    title: string;
-    content: string;
-    category: string;
-    is_anonymous?: boolean;
-  }) => {
-    const response = await axios.post('/api/posts', postData);
-    return response.data;
+      return response.data;
+    } catch (error: any) {
+      return rejectWithValue(error.response?.data || "Failed to fetch posts");
+    }
   }
 );
 
 const postsSlice = createSlice({
-  name: 'posts',
+  name: "posts",
   initialState,
-  reducers: {
-    clearError: (state) => {
-      state.error = null;
-    },
-  },
+  reducers: {},
   extraReducers: (builder) => {
     builder
-      // Fetch Posts
       .addCase(fetchPosts.pending, (state) => {
         state.loading = true;
         state.error = null;
       })
-      .addCase(fetchPosts.fulfilled, (state, action) => {
+      .addCase(fetchPosts.fulfilled, (state, action: PayloadAction<any>) => {
         state.loading = false;
-        state.posts = action.payload.posts;
-        state.total = action.payload.total;
+        // ✅ normalize so latest_comments always exists
+        state.posts = action.payload.posts.map((p: Post) => ({
+          ...p,
+          latest_comments: p.latest_comments ?? [],
+        }));
+        state.totalPages = action.payload.total_pages;
         state.currentPage = action.payload.current_page;
-        state.totalPages = action.payload.pages;
       })
       .addCase(fetchPosts.rejected, (state, action) => {
         state.loading = false;
-        state.error = action.error.message || 'Failed to fetch posts';
-      })
-      // Create Post
-      .addCase(createPost.fulfilled, (state) => {
-        // Refresh posts after creating new one
-        // In a real app, you might want to add the new post to the list
+        state.error = action.payload as string;
       });
   },
 });
 
-export const { clearError } = postsSlice.actions;
 export default postsSlice.reducer;
