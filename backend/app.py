@@ -16,6 +16,8 @@ from dotenv import load_dotenv
 from flask_migrate import Migrate
 from google.oauth2 import id_token
 from google.auth.transport import requests
+from werkzeug.utils import secure_filename
+from flask import send_from_directory
 
 
 # Load environment variables
@@ -75,17 +77,57 @@ class Post(db.Model):
     category = db.Column(db.String(50), nullable=False)
     is_anonymous = db.Column(db.Boolean, default=False)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    likes = db.Column(db.Integer, default=0)
+    likes = db.relationship('Like', backref='post', lazy='dynamic', cascade='all, delete-orphan')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    
+    image_url = db.Column(db.String(300), nullable=True)
     # Relationships
     comments = db.relationship('Comment', backref='post', lazy=True)
+    
+    @property
+    def likes_count(self):
+        return self.likes.count()
+
+    def to_dict(self, current_user_id=None):
+        return {
+            "id": self.id,
+            "title": self.title,
+            "content": self.content,
+            "category": self.category,
+            "is_anonymous": self.is_anonymous,
+            "author": self.user.username if not self.is_anonymous else "Anonymous",
+            "created_at": self.created_at.isoformat(),
+            "comments_count": self.comments.count(),
+            "likes": self.likes_count,
+            "liked_by_me": bool(self.likes.filter_by(user_id=current_user_id).first()) if current_user_id else False,
+            "image_url": self.image_url,
+            "comments": [
+            {
+                "id": c.id,
+                "content": c.content,
+                "author": c.author.username,
+                "created_at": c.created_at.isoformat()
+            }
+            for c in sorted(self.comments, key=lambda x: x.created_at, reverse=True)  # latest first
+        ]
+        }
+
+# models.py
+class Like(db.Model):
+    __tablename__ = 'likes'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    post_id = db.Column(db.Integer, db.ForeignKey('post.id'), nullable=False)
+
+    __table_args__ = (db.UniqueConstraint('user_id', 'post_id', name='uq_user_post_like'),)
 
 class Comment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     content = db.Column(db.Text, nullable=False)
+
+    # Foreign Keys
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     post_id = db.Column(db.Integer, db.ForeignKey('post.id'), nullable=False)
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 class Connection(db.Model):
@@ -137,6 +179,7 @@ class GovernmentScheme(db.Model):
 # Helper functions
 def generate_otp():
     return ''.join(random.choices(string.digits, k=6))
+
 
 def hash_password(password):
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
@@ -505,7 +548,7 @@ def get_posts():
     category = request.args.get('category')
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 10, type=int)
-    
+    current_user_id = get_jwt_identity()
     query = Post.query
     
     if category:
@@ -514,7 +557,7 @@ def get_posts():
     posts = query.order_by(Post.created_at.desc()).paginate(
         page=page, per_page=per_page, error_out=False
     )
-    
+
     return jsonify({
         'posts': [{
             'id': post.id,
@@ -523,33 +566,132 @@ def get_posts():
             'category': post.category,
             'is_anonymous': post.is_anonymous,
             'author': 'Anonymous' if post.is_anonymous else post.author.username,
-            'likes': post.likes,
+            'likes': post.likes.count(),
+            'liked_by_me': bool(post.likes.filter_by(user_id=current_user_id).first()),
+            'image_url': post.image_url,
             'created_at': post.created_at.isoformat(),
-            'comments_count': len(post.comments)
+            'comments_count': len(post.comments),
+            'latest_comments': [
+                {
+                    "id": c.id,
+                    "content": c.content,
+                    "author": c.author.username if c.author else "Anonymous",
+                    "created_at": c.created_at.isoformat()
+                }
+                for c in sorted(post.comments, key=lambda x: x.created_at, reverse=True)[:3]
+            ]
         } for post in posts.items],
         'total': posts.total,
         'pages': posts.pages,
         'current_page': page
     }), 200
 
+@app.route('/api/posts/<int:post_id>/comments', methods=['POST'])
+@jwt_required()
+def add_comment(post_id):
+    data = request.get_json()
+    current_user_id = get_jwt_identity()
+
+    comment = Comment(
+        content=data['content'],
+        post_id=post_id,
+        user_id=current_user_id
+    )
+    db.session.add(comment)
+    db.session.commit()
+
+    return jsonify({
+        "id": comment.id,
+        "content": comment.content,
+        "author": comment.author.username,   # yaha ab chalega
+        "created_at": comment.created_at.isoformat()
+    }), 201
+
+@app.route("/api/posts/<int:post_id>", methods=["GET"])
+def get_post(post_id):
+    post = Post.query.get(post_id)
+    if not post:
+        return jsonify({"message": "Post not found"}), 404
+    return jsonify({"post": post.to_dict()})
+
+@app.route('/api/posts/<int:post_id>/comments', methods=['GET'])
+@jwt_required(optional=True)
+def get_comments(post_id):
+    comments = Comment.query.filter_by(post_id=post_id).order_by(Comment.created_at.desc()).all()
+    return jsonify([
+        {
+            "id": c.id,
+            "content": c.content,
+            "author": c.author.username,
+            "created_at": c.created_at.isoformat()
+        }
+        for c in comments
+    ])
+
+
+@app.route('/api/posts/<int:post_id>/like', methods=['POST'])
+@jwt_required()
+def like_post(post_id):
+    user_id = get_jwt_identity()
+    post = Post.query.get_or_404(post_id)
+
+    existing = Like.query.filter_by(user_id=user_id, post_id=post_id).first()
+    if existing:
+        db.session.delete(existing)  # UNLIKE
+        db.session.commit()
+        return jsonify({"liked": False, "likes": post.likes_count}), 200
+
+    db.session.add(Like(user_id=user_id, post_id=post_id))  # LIKE
+    db.session.commit()
+    return jsonify({"liked": True, "likes": post.likes_count}), 200
+
 @app.route('/api/posts', methods=['POST'])
 @jwt_required()
 def create_post():
     user_id = get_jwt_identity()
-    data = request.get_json()
+    title = request.form.get('title')
+    content = request.form.get('content')
+    category = request.form.get('category')
+    is_anonymous = request.form.get('is_anonymous') == 'true'
+    
+    # Handle image upload
+    image = request.files.get('image')
+    image_url = None
+    if image:
+        # Make filename safe
+            filename = secure_filename(image.filename)
+
+            # Define the folder where images will be saved
+            upload_dir = 'uploads'
+
+            # Create the folder if it doesn't exist
+            if not os.path.exists(upload_dir):
+                os.makedirs(upload_dir)
+
+            # Save the file
+            filepath = os.path.join(upload_dir, filename)
+            image.save(filepath)
+
     
     post = Post(
-        title=data['title'],
-        content=data['content'],
-        category=data['category'],
-        is_anonymous=data.get('is_anonymous', False),
+        title=title,
+        content=content,
+        category=category,
+        is_anonymous=is_anonymous,
+        image_url=f"/{upload_dir}/{filename}" if filename else None,
         user_id=user_id
     )
     
     db.session.add(post)
     db.session.commit()
     
-    return jsonify({'message': 'Post created successfully', 'post_id': post.id}), 201
+    return jsonify({"message": "Post created successfully!"}), 201
+
+# Serve uploaded files
+@app.route('/uploads/<filename>')
+def uploaded_file(filename):
+    upload_dir = os.path.join(os.getcwd(), 'uploads')
+    return send_from_directory(upload_dir, filename)
 
 # AI Chatbot routes
 @app.route('/api/chatbot/query', methods=['POST'])
