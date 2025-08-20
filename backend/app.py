@@ -49,7 +49,12 @@ jwt = JWTManager(app)
 mail = Mail(app)
 # Configure CORS - Allow all origins for development
 CORS(app, 
-     origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+     origins=[
+         "http://localhost:3000", 
+         "http://127.0.0.1:3000",
+         "https://her-voice-six.vercel.app",
+         "https://her-voice-six.vercel.app/"
+     ],
      methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
      allow_headers=["Content-Type", "Authorization", "Access-Control-Allow-Credentials"],
      supports_credentials=True,
