@@ -254,6 +254,10 @@ def get_ai_response(message):
     except Exception as e:
         return f"I'm sorry, I'm having trouble processing your request. Please try again later. Error: {str(e)}"
 
+@app.route("/")
+def home():
+    return "Her Voice Backend is running ✅"
+
 # Test route to verify CORS is working
 @app.route('/api/test', methods=['GET', 'POST', 'OPTIONS'])
 def test_cors():
