@@ -1,5 +1,5 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import axios from 'axios';
+import api from '../../api/axios';
 
 interface CompanyRating {
   name: string;
@@ -39,7 +39,7 @@ const initialState: EqualityState = {
 };
 
 export const fetchCompanyRatings = createAsyncThunk('equality/fetchCompanies', async () => {
-  const response = await axios.get('/api/equality/companies');
+  const response = await api.get('/api/equality/companies');
   return response.data;
 });
 
@@ -53,13 +53,13 @@ export const rateCompany = createAsyncThunk(
     comment?: string;
     is_anonymous?: boolean;
   }) => {
-    const response = await axios.post('/api/equality/rate', ratingData);
+    const response = await api.post('/api/equality/rate', ratingData);
     return response.data;
   }
 );
 
 export const fetchDashboard = createAsyncThunk('equality/fetchDashboard', async () => {
-  const response = await axios.get('/api/equality/dashboard');
+  const response = await api.get('/api/equality/dashboard');
   return response.data;
 });
 

@@ -1,5 +1,5 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import axios from 'axios';
+import api from '../../api/axios';
 
 interface NearbyPlace {
   name: string;
@@ -22,14 +22,14 @@ const initialState: EmergencyState = {
 };
 
 export const fetchNearbyHelp = createAsyncThunk('emergency/fetchNearby', async () => {
-  const response = await axios.get('/api/emergency/nearby');
+  const response = await api.get('/api/emergency/nearby');
   return response.data;
 });
 
 export const sendEmergencyAlert = createAsyncThunk(
   'emergency/sendAlert',
   async (alertData: { message?: string; location?: string }) => {
-    const response = await axios.post('/api/emergency/alert', alertData);
+    const response = await api.post('/api/emergency/alert', alertData);
     return response.data;
   }
 );

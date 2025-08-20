@@ -1,5 +1,5 @@
 import { createSlice, createAsyncThunk, PayloadAction } from "@reduxjs/toolkit";
-import axios from "axios";
+import api from "../../api/axios";
 
 // Comment type
 export interface CommentType {
@@ -49,9 +49,7 @@ export const fetchPosts = createAsyncThunk<
   async ({ page, per_page }, { rejectWithValue }) => {
     try {
       const token = localStorage.getItem("token");
-      const response = await axios.get(`/api/posts?page=${page}&per_page=${per_page}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const response = await api.get(`/api/posts?page=${page}&per_page=${per_page}`);
 
       return response.data;
     } catch (error: any) {

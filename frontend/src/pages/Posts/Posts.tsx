@@ -45,7 +45,7 @@ import {
 } from "@mui/icons-material";
 import { RootState, AppDispatch } from "../../store/index";
 import { fetchPosts } from "../../store/slices/postsSlice";
-import axios from "axios";
+import api from "../../api/axios";
 
 // ✅ Define Post type
 interface CommentType {
@@ -168,7 +168,6 @@ const Posts: React.FC = () => {
   // ---------- API Handlers ----------
   const handleCreatePost = async () => {
     if (newPost.title && newPost.content && newPost.category) {
-      const token = localStorage.getItem("token");
       const formData = new FormData();
       formData.append("title", newPost.title);
       formData.append("content", newPost.content);
@@ -177,8 +176,8 @@ const Posts: React.FC = () => {
       if (newPost.image) formData.append("image", newPost.image);
 
       try {
-        await axios.post("/api/posts", formData, {
-          headers: { Authorization: `Bearer ${token}`, "Content-Type": "multipart/form-data" },
+        await api.post("/api/posts", formData, {
+          headers: { "Content-Type": "multipart/form-data" },
         });
         setCreateDialogOpen(false);
         setNewPost({ title: "", content: "", category: "", is_anonymous: false, image: null });
@@ -190,9 +189,8 @@ const Posts: React.FC = () => {
   };
 
   const handleLike = async (postId: number) => {
-    const token = localStorage.getItem("token");
     try {
-      await axios.post(`/api/posts/${postId}/like`, {}, { headers: { Authorization: `Bearer ${token}` } });
+      await api.post(`/api/posts/${postId}/like`);
       dispatch(fetchPosts({ page: currentPage, per_page: 10 }));
     } catch (error: any) {
       console.error("Failed to like post:", error.response?.data || error.message);
@@ -200,11 +198,8 @@ const Posts: React.FC = () => {
   };
 
   const fetchComments = async (postId: number) => {
-    const token = localStorage.getItem("token");
     try {
-      const response = await axios.get(`/api/posts/${postId}/comments`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const response = await api.get(`/api/posts/${postId}/comments`);
       return response.data.comments || [];
     } catch (error: any) {
       console.error("Failed to fetch comments:", error.response?.data || error.message);
@@ -221,9 +216,8 @@ const Posts: React.FC = () => {
 
   const handleAddComment = async () => {
     if (!newComment.trim() || !selectedPostId) return;
-    const token = localStorage.getItem("token");
     try {
-      await axios.post(`/api/posts/${selectedPostId}/comments`, { content: newComment }, { headers: { Authorization: `Bearer ${token}` } });
+      await api.post(`/api/posts/${selectedPostId}/comments`, { content: newComment });
       const updatedComments = await fetchComments(selectedPostId);
       setComments(updatedComments);
       setNewComment("");
@@ -282,7 +276,7 @@ const Posts: React.FC = () => {
                 {post.image_url && (
                   <Box sx={{ mt: 2, textAlign: "center" }}>
                     <img
-                      src={`http://localhost:5000${post.image_url}`}
+                      src={`${process.env.REACT_APP_API_URL || 'http://localhost:5000'}${post.image_url}`}
                       alt="post"
                       style={{ width: "70%", aspectRatio: "1/1", objectFit: "cover", borderRadius: "12px", maxHeight: "280px" }}
                     />

@@ -1,5 +1,5 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import axios from 'axios';
+import api from '../../api/axios';
 
 interface ChatMessage {
   id: number;
@@ -23,13 +23,13 @@ const initialState: ChatbotState = {
 export const sendMessage = createAsyncThunk(
   'chatbot/sendMessage',
   async (message: string) => {
-    const response = await axios.post('/api/chatbot/query', { message });
+    const response = await api.post('/api/chatbot/query', { message });
     return response.data;
   }
 );
 
 export const fetchChatHistory = createAsyncThunk('chatbot/fetchHistory', async () => {
-  const response = await axios.get('/api/chatbot/history');
+  const response = await api.get('/api/chatbot/history');
   return response.data;
 });
 

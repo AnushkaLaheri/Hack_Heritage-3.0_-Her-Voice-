@@ -1,8 +1,8 @@
 import axios from 'axios';
 
-// Centralized Axios instance with baseURL
+// Centralized Axios instance with baseURL from environment variables
 const api = axios.create({
-  baseURL: 'http://127.0.0.1:5000',
+  baseURL: process.env.REACT_APP_API_URL || 'http://localhost:5000',
 });
 
 // Attach JWT from localStorage, if present
