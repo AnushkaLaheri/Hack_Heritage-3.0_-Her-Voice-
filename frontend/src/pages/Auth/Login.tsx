@@ -423,10 +423,15 @@ const Login: React.FC = () => {
               />
             </Box>
 
-            <Grid container justifyContent="center">
+            <Grid container justifyContent="space-between">
               <Grid item>
                 <Link component={RouterLink} to="/register" variant="body2">
                   {"Don't have an account? Sign Up"}
+                </Link>
+              </Grid>
+              <Grid item>
+                <Link component={RouterLink} to="/forgot-password" variant="body2">
+                  Forgot password?
                 </Link>
               </Grid>
             </Grid>

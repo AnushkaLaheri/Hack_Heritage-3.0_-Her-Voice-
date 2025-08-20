@@ -15,6 +15,9 @@ import Emergency from './pages/Emergency/Emergency';
 import Equality from './pages/Equality/Equality';
 import Schemes from './pages/Schemes/Schemes';
 import Profile from './pages/Profile/Profile';
+import Settings from './pages/Profile/Settings';
+import ForgotPassword from './pages/Auth/ForgotPassword';
+import ResetPassword from './pages/Auth/ResetPassword';
 
 // Protected Route Component
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -42,6 +45,8 @@ function App() {
       {/* Public Routes */}
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password/:token" element={<ResetPassword />} />
       
       {/* Protected Routes */}
       <Route
@@ -59,6 +64,7 @@ function App() {
         <Route path="equality" element={<Equality />} />
         <Route path="schemes" element={<Schemes />} />
         <Route path="profile" element={<Profile />} />
+        <Route path="settings" element={<Settings />} />
       </Route>
       
       {/* Fallback */}

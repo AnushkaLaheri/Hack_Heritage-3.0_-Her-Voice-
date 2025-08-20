@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 from flask_cors import CORS
@@ -12,6 +12,7 @@ from geopy.geocoders import Nominatim
 from geopy.distance import geodesic
 import random
 import string
+import secrets
 from dotenv import load_dotenv
 from flask_migrate import Migrate
 from google.oauth2 import id_token
@@ -46,7 +47,13 @@ openai.api_key = os.getenv('OPENAI_API_KEY')
 db = SQLAlchemy(app)
 jwt = JWTManager(app)
 mail = Mail(app)
-CORS(app)
+# Configure CORS - Allow all origins for development
+CORS(app, 
+     origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+     methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+     allow_headers=["Content-Type", "Authorization", "Access-Control-Allow-Credentials"],
+     supports_credentials=True,
+     expose_headers=["Content-Type", "Authorization"])
 migrate = Migrate(app, db)
 
 
@@ -61,6 +68,8 @@ class User(db.Model):
     pan = db.Column(db.String(10), unique=True, nullable=True)
     phone = db.Column(db.String(15), nullable=True)
     location = db.Column(db.String(200), nullable=True)
+    profile_image = db.Column(db.String(300), nullable=True)
+    preferences = db.Column(db.JSON, nullable=True)
     is_verified = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     otp = db.Column(db.String(6), nullable=True)
@@ -176,6 +185,13 @@ class GovernmentScheme(db.Model):
     location = db.Column(db.String(200), nullable=True)
     category = db.Column(db.String(100), nullable=False)
 
+class PasswordResetToken(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    token = db.Column(db.String(128), unique=True, nullable=False)
+    expiry = db.Column(db.DateTime, nullable=False)
+    used = db.Column(db.Boolean, default=False)
+
 # Helper functions
 def generate_otp():
     return ''.join(random.choices(string.digits, k=6))
@@ -199,6 +215,31 @@ def send_otp_email(email, otp):
         print(f"Email error: {e}")
         return False
 
+# Password reset helpers
+
+def create_password_reset_token(user_id: int) -> str:
+    token = secrets.token_urlsafe(48)
+    expiry = datetime.utcnow() + timedelta(hours=1)
+    reset = PasswordResetToken(user_id=user_id, token=token, expiry=expiry, used=False)
+    db.session.add(reset)
+    db.session.commit()
+    return token
+
+
+def send_password_reset_email(email: str, token: str) -> bool:
+    try:
+        frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:3000')
+        reset_link = f"{frontend_url}/reset-password/{token}"
+        msg = Message('Password Reset Request - Women Safety App',
+                     sender=app.config['MAIL_USERNAME'],
+                     recipients=[email])
+        msg.body = f"You requested a password reset. Click the link to reset your password: {reset_link}\nIf you did not request this, ignore this email."
+        mail.send(msg)
+        return True
+    except Exception as e:
+        print(f"Password reset email error: {e}")
+        return False
+
 def get_ai_response(message):
     try:
         response = openai.ChatCompletion.create(
@@ -207,11 +248,21 @@ def get_ai_response(message):
                 {"role": "system", "content": "You are a helpful AI assistant specializing in women's rights, legal advice, and safety information. Provide accurate, helpful, and supportive responses."},
                 {"role": "user", "content": message}
             ],
-            max_tokens=500
+            max_tokens=500  
         )
         return response.choices[0].message.content
     except Exception as e:
         return f"I'm sorry, I'm having trouble processing your request. Please try again later. Error: {str(e)}"
+
+# Test route to verify CORS is working
+@app.route('/api/test', methods=['GET', 'POST', 'OPTIONS'])
+def test_cors():
+    return jsonify({
+        'message': 'CORS is working!',
+        'method': request.method,
+        'origin': request.headers.get('Origin'),
+        'timestamp': datetime.utcnow().isoformat()
+    }), 200
 
 # Authentication routes
 @app.route('/api/auth/register', methods=['POST'])
@@ -261,6 +312,10 @@ def login():
     # Agar user verified nahi hai
     if not user.is_verified:
         return jsonify({'error': 'Account not verified. Please verify OTP first.'}), 403
+    
+    # Check if user has a password hash (Google users might not)
+    if not user.password_hash or user.password_hash == hash_password('google_oauth_user_no_password'):
+        return jsonify({'error': 'This account uses Google Sign-In. Please use Google login or reset your password.'}), 400
     
     if user and verify_password(data['password'], user.password_hash):
         access_token = create_access_token(identity=user.id)
@@ -525,14 +580,21 @@ def google_login():
 
     try:
         # Verify token
-        idinfo = id_token.verify_oauth2_token(token, requests.Request(), "YOUR_GOOGLE_CLIENT_ID")
+        idinfo = id_token.verify_oauth2_token(token, requests.Request(), os.getenv('GOOGLE_CLIENT_ID'))
 
         email = idinfo.get("email")
         name = idinfo.get("name")
 
         user = User.query.filter_by(email=email).first()
         if not user:
-            user = User(username=name, email=email, role="User", is_verified=True)
+            # Google users don't have a password, so we set a dummy hash
+            user = User(
+                username=name, 
+                email=email, 
+                password_hash=hash_password('google_oauth_user_no_password'), 
+                role="User", 
+                is_verified=True
+            )
             db.session.add(user)
             db.session.commit()
 
@@ -541,6 +603,50 @@ def google_login():
     except Exception as e:
         return jsonify({"error": "Google login failed", "details": str(e)}), 400
     
+# Forgot/Reset Password routes
+@app.route('/api/auth/forgot-password', methods=['POST'])
+def forgot_password():
+    data = request.get_json()
+    email = data.get('email')
+    if not email:
+        return jsonify({'error': 'Email is required'}), 400
+
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        # Do not reveal whether the email exists
+        return jsonify({'message': 'If this email is registered, a reset link has been sent'}), 200
+
+    token = create_password_reset_token(user.id)
+    sent = send_password_reset_email(user.email, token)
+    if not sent:
+        return jsonify({'error': 'Failed to send reset email'}), 500
+
+    return jsonify({'message': 'Reset link sent to email'}), 200
+
+
+@app.route('/api/auth/reset-password/<token>', methods=['POST'])
+def reset_password(token):
+    data = request.get_json()
+    new_password = data.get('new_password')
+    if not new_password:
+        return jsonify({'error': 'New password is required'}), 400
+
+    reset = PasswordResetToken.query.filter_by(token=token, used=False).first()
+    if not reset:
+        return jsonify({'error': 'Invalid or used token'}), 400
+
+    if datetime.utcnow() > reset.expiry:
+        return jsonify({'error': 'Token expired'}), 400
+
+    user = User.query.get(reset.user_id)
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+
+    user.password_hash = hash_password(new_password)
+    reset.used = True
+    db.session.commit()
+    return jsonify({'message': 'Password reset successful'}), 200
+
 # Posts routes
 @app.route('/api/posts', methods=['GET'])
 @jwt_required()
@@ -687,11 +793,14 @@ def create_post():
     
     return jsonify({"message": "Post created successfully!"}), 201
 
-# Serve uploaded files
-@app.route('/uploads/<filename>')
-def uploaded_file(filename):
-    upload_dir = os.path.join(os.getcwd(), 'uploads')
-    return send_from_directory(upload_dir, filename)
+    # Serve uploaded files
+    # Serve uploaded files
+@app.route('/uploads/<path:filename>')
+def serve_uploaded_file(filename):
+    # Serve from backend/uploads directory
+    uploads_path = os.path.join(app.root_path, 'uploads')
+    return send_from_directory(uploads_path, filename)
+
 
 # AI Chatbot routes
 @app.route('/api/chatbot/query', methods=['POST'])
@@ -902,6 +1011,8 @@ def get_profile():
         'role': user.role,
         'phone': user.phone,
         'location': user.location,
+        'profile_image': user.profile_image,
+        'preferences': user.preferences or {},
         'is_verified': user.is_verified,
         'created_at': user.created_at.isoformat()
     }), 200
@@ -923,6 +1034,101 @@ def update_profile():
     db.session.commit()
     
     return jsonify({'message': 'Profile updated successfully'}), 200
+
+# Extended Profile routes
+@app.route('/api/profile/<int:user_id>', methods=['GET'])
+@jwt_required()
+def get_profile_by_id(user_id):
+    user = User.query.get_or_404(user_id)
+    return jsonify({
+        'id': user.id,
+        'username': user.username,
+        'email': user.email,
+        'role': user.role,
+        'phone': user.phone,
+        'location': user.location,
+        'profile_image': user.profile_image,
+        'preferences': user.preferences or {},
+        'is_verified': user.is_verified,
+        'created_at': user.created_at.isoformat()
+    }), 200
+
+
+@app.route('/api/profile/<int:user_id>', methods=['PUT'])
+@jwt_required()
+def update_profile_by_id(user_id):
+    current_user_id = get_jwt_identity()
+    if current_user_id != user_id:
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    user = User.query.get_or_404(user_id)
+
+    # Support both JSON and multipart/form-data
+    if request.content_type and 'multipart/form-data' in request.content_type:
+        user.username = request.form.get('username', user.username)
+        user.email = request.form.get('email', user.email)
+        user.role = request.form.get('role', user.role)
+        user.location = request.form.get('location', user.location)
+        user.phone = request.form.get('phone', user.phone)
+
+        image = request.files.get('profile_image')
+        if image and image.filename:
+            filename = secure_filename(image.filename)
+            upload_dir = os.path.join('uploads', 'profile_images')
+            os.makedirs(upload_dir, exist_ok=True)
+            filepath = os.path.join(upload_dir, filename)
+            image.save(filepath)
+            user.profile_image = f"/{upload_dir}/{filename}"
+    else:
+        data = request.get_json() or {}
+        user.username = data.get('username', user.username)
+        user.email = data.get('email', user.email)
+        user.role = data.get('role', user.role)
+        user.location = data.get('location', user.location)
+        user.phone = data.get('phone', user.phone)
+        if 'profile_image' in data:
+            user.profile_image = data['profile_image']
+
+    db.session.commit()
+    
+    # Return updated user data
+    return jsonify({
+        'id': user.id,
+        'username': user.username,
+        'email': user.email,
+        'role': user.role,
+        'phone': user.phone,
+        'location': user.location,
+        'profile_image': user.profile_image,
+        'preferences': user.preferences or {},
+        'is_verified': user.is_verified,
+        'created_at': user.created_at.isoformat()
+    }), 200
+
+
+@app.route('/api/profile/settings', methods=['PATCH'])
+@jwt_required()
+def update_settings():
+    user_id = get_jwt_identity()
+    user = User.query.get_or_404(user_id)
+    data = request.get_json() or {}
+
+    # Preferences update
+    prefs = user.preferences or {}
+    if 'notifications' in data:
+        prefs['notifications'] = data['notifications']
+    if 'theme' in data:
+        prefs['theme'] = data['theme']
+    user.preferences = prefs
+
+    # Password change
+    if 'current_password' in data and 'new_password' in data:
+        if not verify_password(data['current_password'], user.password_hash):
+            return jsonify({'error': 'Current password is incorrect'}), 400
+        user.password_hash = hash_password(data['new_password'])
+
+    db.session.commit()
+    return jsonify({'message': 'Settings updated successfully', 'preferences': user.preferences or {}}), 200
 
 # Initialize database
 @app.route('/api/init-db', methods=['POST'])

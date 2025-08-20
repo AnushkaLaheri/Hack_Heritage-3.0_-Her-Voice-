@@ -60,6 +60,7 @@ const Layout: React.FC = () => {
     { text: 'Gender Equality', icon: <Equalizer />, path: '/equality' },
     { text: 'Government Schemes', icon: <Description />, path: '/schemes' },
     { text: 'My Profile', icon: <Person />, path: '/profile' },
+    { text: 'Settings', icon: <Security />, path: '/settings' },
   ];
 
   const handleDrawerToggle = () => {
@@ -176,8 +177,12 @@ const Layout: React.FC = () => {
               onClick={handleProfileMenuOpen}
               sx={{ ml: 1 }}
             >
-              <Avatar sx={{ width: 32, height: 32, bgcolor: 'primary.main' }}>
-                {user?.username?.charAt(0).toUpperCase()}
+              <Avatar
+                sx={{ width: 40 , height: 40 , bgcolor: 'primary.main' }}
+                src={user?.profile_image || undefined}
+                alt={user?.username}
+              >
+                {!user?.profile_image && user?.username?.charAt(0).toUpperCase()}
               </Avatar>
             </IconButton>
           </Box>
