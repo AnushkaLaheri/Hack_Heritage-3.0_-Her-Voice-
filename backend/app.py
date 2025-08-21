@@ -366,7 +366,12 @@ def get_ai_response(message):
 
 
 # Groq Client
-client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+try:
+    client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+except Exception as e:
+    print("⚠ Groq client failed to initialize:", e)
+    client = None
+
 
 def ask_database_or_chat(query):
     """
