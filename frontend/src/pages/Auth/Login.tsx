@@ -63,7 +63,8 @@ const Login: React.FC = () => {
     aadhaar: '',
     pan: '',
   });
-  const [otpSent, setOtpSent] = useState(false);
+  const [aadhaarOtpSent, setAadhaarOtpSent] = useState(false);
+  const [panOtpSent, setPanOtpSent] = useState(false);
   const [otpValue, setOtpValue] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -74,7 +75,8 @@ const Login: React.FC = () => {
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
     setTabValue(newValue);
     dispatch(clearError());
-    setOtpSent(false);
+    setAadhaarOtpSent(false);
+    setPanOtpSent(false);
     setOtpValue('');
   };
 
@@ -102,101 +104,198 @@ const Login: React.FC = () => {
   
   // Aadhaar OTP send
   const handleAadhaarLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.aadhaar) return;
+  e.preventDefault();
+  if (!formData.aadhaar) return;
+
+  console.log('Sending Aadhaar OTP to:', `${process.env.REACT_APP_API_URL}/api/auth/send-aadhaar-otp`);
+  console.log('Aadhaar:', formData.aadhaar);
+
+  try {
+    setLoading(true);
+
+    const res = await fetch(`${process.env.REACT_APP_API_URL}/api/auth/send-aadhaar-otp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ aadhaar: formData.aadhaar }),
+    });
+
+    console.log('Aadhaar OTP Response status:', res.status);
+
+    // Always parse JSON safely
+    let data: any = {};
     try {
-      setLoading(true);
-      const res = await fetch('/api/auth/send-aadhaar-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ aadhaar: formData.aadhaar }),
-      });
-      const data = await res.json();
-      setLoading(false);
-      if (res.ok) {
-        setOtpSent(true);
-      } else {
-        alert(data.error);
-      }
-    } catch (err) {
-      console.error(err);
-      setLoading(false);
+      data = await res.json();
+      console.log('Aadhaar OTP Response data:', data);
+    } catch (jsonErr) {
+      console.warn('Response is not valid JSON', jsonErr);
     }
-  };
+
+    setLoading(false);
+
+    if (res.ok) {
+      setAadhaarOtpSent(true);
+      alert('OTP sent successfully! Check your email.');
+    } else {
+      alert(data.error || 'Something went wrong. Please try again.');
+    }
+  } catch (err) {
+    console.error('Network or server error:', err);
+    setLoading(false);
+    alert('Failed to send OTP. Please check your connection or try later.');
+  }
+};
+
 
   // PAN OTP send
   const handlePANLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.pan) return;
+    
+    console.log('Sending PAN OTP to:', `${process.env.REACT_APP_API_URL}/api/auth/send-pan-otp`);
+    console.log('PAN:', formData.pan);
+    
     try {
       setLoading(true);
-      const res = await fetch('/api/auth/send-pan-otp', {
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/auth/send-pan-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pan: formData.pan }),
       });
+      
+      console.log('PAN OTP Response status:', res.status);
+      
       const data = await res.json();
+      console.log('PAN OTP Response data:', data);
+      
       setLoading(false);
       if (res.ok) {
-        setOtpSent(true);
+        setPanOtpSent(true);
+        alert('OTP sent successfully! Check your email.');
       } else {
         alert(data.error);
       }
     } catch (err) {
-      console.error(err);
+      console.error('PAN OTP error:', err);
       setLoading(false);
+      alert('Failed to send PAN OTP. Please try again.');
     }
   };
 
   // Verify Aadhaar OTP
   const verifyAadhaarOtp = async () => {
-    if (!otpValue) return;
+    if (!otpValue) {
+      alert('Please enter OTP');
+      return;
+    }
+    
+    console.log('Verifying Aadhaar OTP:', { aadhaar: formData.aadhaar, otp: otpValue });
+    
     try {
       setLoading(true);
-      const res = await fetch('/api/auth/verify-aadhaar-otp', {
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/auth/verify-aadhaar-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ aadhaar: formData.aadhaar, otp: otpValue }),
       });
+      
+      console.log('Verify Aadhaar Response status:', res.status);
+      
       const data = await res.json();
+      console.log('Verify Aadhaar Response data:', data);
+      
       setLoading(false);
 
       if (data.access_token) {
+        console.log('Login successful, updating state and navigating...');
+        
+        // Update localStorage first
         localStorage.setItem('token', data.access_token);
+        
+        // Update Redux state manually
+        dispatch({
+          type: 'auth/login/fulfilled',
+          payload: {
+            access_token: data.access_token,
+            user: data.user || {
+              id: 0,
+              username: 'User',
+              email: '',
+              role: 'User',
+              is_verified: true
+            }
+          }
+        });
+        
+        console.log('Navigating to home...');
+        // Navigate to home
         navigate('/', { replace: true });
-        window.location.reload();
       } else {
+        console.error('No access token in response:', data);
         alert(data.error || 'OTP verification failed');
       }
     } catch (err) {
-      console.error(err);
+      console.error('Network error during OTP verification:', err);
       setLoading(false);
+      alert('Network error. Please try again.');
     }
   };
 
 
   const verifyPanOtp = async () => {
-    if (!otpValue) return;
+    if (!otpValue) {
+      alert('Please enter OTP');
+      return;
+    }
+    
+    console.log('Verifying PAN OTP:', { pan: formData.pan, otp: otpValue });
+    
     try {
       setLoading(true);
-      const res = await fetch('/api/auth/verify-pan-otp', {
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/auth/verify-pan-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pan: formData.pan, otp: otpValue }),
       });
+      
+      console.log('Verify PAN Response status:', res.status);
+      
       const data = await res.json();
+      console.log('Verify PAN Response data:', data);
+      
       setLoading(false);
 
       if (data.access_token) {
+        console.log('PAN Login successful, updating state and navigating...');
+        
+        // Update localStorage first
         localStorage.setItem('token', data.access_token);
+        
+        // Update Redux state manually
+        dispatch({
+          type: 'auth/login/fulfilled',
+          payload: {
+            access_token: data.access_token,
+            user: data.user || {
+              id: 0,
+              username: 'User',
+              email: '',
+              role: 'User',
+              is_verified: true
+            }
+          }
+        });
+        
+        console.log('Navigating to home...');
+        // Navigate to home
         navigate('/', { replace: true });
-        window.location.reload();
       } else {
+        console.error('No access token in PAN response:', data);
         alert(data.error || 'OTP verification failed');
       }
     } catch (err) {
-      console.error(err);
+      console.error('Network error during PAN OTP verification:', err);
       setLoading(false);
+      alert('Network error. Please try again.');
     }
   };
 
@@ -210,7 +309,7 @@ const Login: React.FC = () => {
       console.log("Google user:", userInfo?.email, userInfo?.name);
 
       // Send token to backend
-      const res = await fetch("/api/auth/google-login", {
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/auth/google-login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token: credentialResponse.credential }),
@@ -218,14 +317,32 @@ const Login: React.FC = () => {
 
       const data = await res.json();
       if (data.access_token) {
+        // Update localStorage first
         localStorage.setItem("token", data.access_token);
+        
+        // Update Redux state manually
+        dispatch({
+          type: 'auth/login/fulfilled',
+          payload: {
+            access_token: data.access_token,
+            user: data.user || {
+              id: 0,
+              username: userInfo?.name || 'User',
+              email: userInfo?.email || '',
+              role: 'User',
+              is_verified: true
+            }
+          }
+        });
+        
+        // Navigate to home
         navigate('/', { replace: true });
-        window.location.reload();
       } else {
         alert(data.error || "Google login failed");
       }
     } catch (err) {
       console.error("Google login error:", err);
+      alert("Google login failed. Please try again.");
     }
   };
 
@@ -302,7 +419,7 @@ const Login: React.FC = () => {
             {/* Aadhaar Login */}
             <TabPanel value={tabValue} index={1}>
               <Box component="form" sx={{ mt: 1 }}>
-                {!otpSent && (
+                {!aadhaarOtpSent && (
                   <>
                     <TextField
                       margin="normal"
@@ -328,7 +445,7 @@ const Login: React.FC = () => {
                     </Button>
                   </>
                 )}
-                {otpSent && (
+                {aadhaarOtpSent && (
                   <>
                     <TextField
                       margin="normal"
@@ -356,7 +473,7 @@ const Login: React.FC = () => {
             {/* PAN Login */}
             <TabPanel value={tabValue} index={2}>
               <Box component="form" sx={{ mt: 1 }}>
-                {!otpSent && (
+                {!panOtpSent && (
                   <>
                     <TextField
                       margin="normal"
@@ -382,7 +499,7 @@ const Login: React.FC = () => {
                     </Button>
                   </>
                 )}
-                {otpSent && (
+                {panOtpSent && (
                   <>
                     <TextField
                       margin="normal"

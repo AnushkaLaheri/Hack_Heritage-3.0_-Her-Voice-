@@ -1,10 +1,10 @@
-import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
+import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import api from '../../api/axios';
 
-interface ChatMessage {
+export interface ChatMessage {
   id: number;
-  message: string;
-  response: string;
+  role: 'user' | 'bot';
+  content: string;
   created_at: string;
 }
 
@@ -20,57 +20,51 @@ const initialState: ChatbotState = {
   error: null,
 };
 
-export const sendMessage = createAsyncThunk(
+export const sendMessage = createAsyncThunk<{ answer: string }, string>(
   'chatbot/sendMessage',
-  async (message: string) => {
-    const response = await api.post('/api/chatbot/query', { message });
+  async (question: string) => {
+    const response = await api.post('/ask', { question });
     return response.data;
   }
 );
-
-export const fetchChatHistory = createAsyncThunk('chatbot/fetchHistory', async () => {
-  const response = await api.get('/api/chatbot/history');
-  return response.data;
-});
 
 const chatbotSlice = createSlice({
   name: 'chatbot',
   initialState,
   reducers: {
-    clearError: (state) => {
-      state.error = null;
-    },
-    clearMessages: (state) => {
-      state.messages = [];
-    },
+    clearMessages: (state) => { state.messages = []; },
+    clearError: (state) => { state.error = null; },
   },
   extraReducers: (builder) => {
     builder
-      // Send Message
       .addCase(sendMessage.pending, (state) => {
         state.loading = true;
         state.error = null;
       })
       .addCase(sendMessage.fulfilled, (state, action) => {
         state.loading = false;
-        // Add the new message to the list
+        const now = Date.now();
+        // user message
         state.messages.push({
-          id: Date.now(),
-          message: action.meta.arg,
-          response: action.payload.response,
+          id: now,
+          role: 'user',
+          content: action.meta.arg,
+          created_at: new Date().toISOString(),
+        });
+        // bot reply
+        state.messages.push({
+          id: now + 1,
+          role: 'bot',
+          content: action.payload.answer,
           created_at: new Date().toISOString(),
         });
       })
       .addCase(sendMessage.rejected, (state, action) => {
         state.loading = false;
         state.error = action.error.message || 'Failed to send message';
-      })
-      // Fetch History
-      .addCase(fetchChatHistory.fulfilled, (state, action) => {
-        state.messages = action.payload.messages;
       });
   },
 });
 
-export const { clearError, clearMessages } = chatbotSlice.actions;
+export const { clearMessages, clearError } = chatbotSlice.actions;
 export default chatbotSlice.reducer;

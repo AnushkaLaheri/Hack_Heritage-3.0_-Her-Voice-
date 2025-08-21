@@ -61,9 +61,14 @@ export const register = createAsyncThunk(
     pan?: string;
     phone?: string;
     location?: string;
-  }) => {
-    const response = await api.post('/api/auth/register', userData);
-    return response.data as { message: string };
+  }, { rejectWithValue }) => {
+    try {
+      const response = await api.post('/api/auth/register', userData);
+      return response.data as { message: string };
+    } catch (err: any) {
+      const message = err?.response?.data?.error || err?.message || 'Registration failed';
+      return rejectWithValue(message);
+    }
   }
 );
 
@@ -186,7 +191,7 @@ const authSlice = createSlice({
       })
       .addCase(register.rejected, (state, action) => {
         state.loading = false;
-        state.error = action.error.message || 'Registration failed';
+        state.error = (action.payload as string) || action.error.message || 'Registration failed';
       })
       // Verify OTP
       .addCase(verifyOTP.pending, (state) => {

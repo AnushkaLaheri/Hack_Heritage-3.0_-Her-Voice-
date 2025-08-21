@@ -28,7 +28,7 @@ import {
   CreditCard,
 } from '@mui/icons-material';
 import { RootState, AppDispatch } from '../../store/index';
-import { register, clearError } from '../../store/slices/authSlice';
+import { register, clearError, verifyOTP } from '../../store/slices/authSlice';
 
 const steps = ['Basic Information', 'Verification Details', 'Role Selection'];
 
@@ -49,7 +49,6 @@ const Register: React.FC = () => {
   const [otpSent, setOtpSent] = useState(false);
   const [otpValue, setOtpValue] = useState('');
   const [registeredUserEmail, setRegisteredUserEmail] = useState('');
-  const [loadingOtp, setLoadingOtp] = useState(false);
 
   const navigate = useNavigate();
   const dispatch = useDispatch<AppDispatch>();
@@ -115,36 +114,18 @@ const Register: React.FC = () => {
 
     const result = await dispatch(register(userData));
     if (register.fulfilled.match(result)) {
-      if (formData.aadhaar || formData.pan) {
-        setOtpSent(true);
-        setRegisteredUserEmail(formData.email);
-      } else {
-        navigate('/login');
-      }
+      // Always show OTP verification after successful registration
+      setOtpSent(true);
+      setRegisteredUserEmail(formData.email);
     }
   };
 
-  const verifyOtp = async () => {
+  const handleVerifyOtp = async () => {
     if (!otpValue) return;
-    setLoadingOtp(true);
-
-    try {
-      const res = await fetch('/api/auth/verify-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: registeredUserEmail, otp: otpValue }),
-      });
-      const data = await res.json();
-      setLoadingOtp(false);
-
-      if (data.success) {
-        navigate('/login');
-      } else {
-        alert(data.error || 'OTP verification failed');
-      }
-    } catch (err) {
-      console.error(err);
-      setLoadingOtp(false);
+    
+    const result = await dispatch(verifyOTP({ email: registeredUserEmail, otp: otpValue }));
+    if (verifyOTP.fulfilled.match(result)) {
+      navigate('/login');
     }
   };
 
@@ -299,8 +280,8 @@ const Register: React.FC = () => {
           {otpSent ? (
             <Box sx={{ width: '100%' }}>
               <TextField fullWidth label="Enter OTP" value={otpValue} onChange={(e) => setOtpValue(e.target.value)} />
-              <Button fullWidth variant="contained" sx={{ mt: 2 }} onClick={verifyOtp} disabled={loadingOtp}>
-                {loadingOtp ? <CircularProgress size={24} /> : 'Verify OTP'}
+              <Button fullWidth variant="contained" sx={{ mt: 2 }} onClick={handleVerifyOtp} disabled={loading}>
+                {loading ? <CircularProgress size={24} /> : 'Verify OTP'}
               </Button>
             </Box>
           ) : (

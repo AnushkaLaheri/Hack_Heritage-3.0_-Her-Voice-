@@ -12,12 +12,14 @@ import Home from './pages/Home/Home';
 import Posts from './pages/Posts/Posts';
 import Chatbot from './pages/Chatbot/Chatbot';
 import Emergency from './pages/Emergency/Emergency';
+import CompleteEquality from './pages/Equality/CompleteEquality';
 import Equality from './pages/Equality/Equality';
 import Schemes from './pages/Schemes/Schemes';
 import Profile from './pages/Profile/Profile';
 import Settings from './pages/Profile/Settings';
 import ForgotPassword from './pages/Auth/ForgotPassword';
 import ResetPassword from './pages/Auth/ResetPassword';
+import SkillSwap from './pages/SkillSwap/SkillSwap';
 
 // Protected Route Component
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -43,7 +45,7 @@ function App() {
   return (
     <Routes>
       {/* Public Routes */}
-      <Route path="/login" element={<Login />} />
+      <Route path="/login" element={isAuthenticated && token ? <Navigate to="/" replace /> : <Login />} />
       <Route path="/register" element={<Register />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password/:token" element={<ResetPassword />} />
@@ -60,9 +62,11 @@ function App() {
         <Route index element={<Home />} />
         <Route path="posts" element={<Posts />} />
         <Route path="chatbot" element={<Chatbot />} />
+        <Route path="complete-equality" element={<CompleteEquality />} />
         <Route path="emergency" element={<Emergency />} />
         <Route path="equality" element={<Equality />} />
         <Route path="schemes" element={<Schemes />} />
+        <Route path="skill-swap" element={<SkillSwap />} />
         <Route path="profile" element={<Profile />} />
         <Route path="settings" element={<Settings />} />
       </Route>

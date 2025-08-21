@@ -19,6 +19,8 @@ from google.oauth2 import id_token
 from google.auth.transport import requests
 from werkzeug.utils import secure_filename
 from flask import send_from_directory
+from groq import Groq
+import sqlite3
 
 
 # Load environment variables
@@ -114,14 +116,14 @@ class Post(db.Model):
             "likes": self.likes_count,
             "liked_by_me": bool(self.likes.filter_by(user_id=current_user_id).first()) if current_user_id else False,
             "image_url": self.image_url,
-            "comments": [
+        "comments": [
             {
                 "id": c.id,
                 "content": c.content,
                 "author": c.author.username,
                 "created_at": c.created_at.isoformat()
             }
-            for c in sorted(self.comments, key=lambda x: x.created_at, reverse=True)  # latest first
+            for c in sorted(list(self.comments), key=lambda x: x.created_at, reverse=True)  # latest first
         ]
         }
 
@@ -197,6 +199,104 @@ class PasswordResetToken(db.Model):
     expiry = db.Column(db.DateTime, nullable=False)
     used = db.Column(db.Boolean, default=False)
 
+# Skill Swap Models
+class SkillCategory(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), unique=True, nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    icon = db.Column(db.String(50), nullable=True)  # For UI icons
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class Skill(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    category_id = db.Column(db.Integer, db.ForeignKey('skill_category.id'), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    category = db.relationship('SkillCategory', backref='skills')
+
+class UserSkill(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    skill_id = db.Column(db.Integer, db.ForeignKey('skill.id'), nullable=False)
+    skill_type = db.Column(db.String(20), nullable=False)  # 'teach' or 'learn'
+    proficiency_level = db.Column(db.String(20), nullable=True)  # 'beginner', 'intermediate', 'advanced', 'expert'
+    description = db.Column(db.Text, nullable=True)  # User's description of their skill/learning goal
+    availability = db.Column(db.String(100), nullable=True)  # e.g., "Weekends", "Evenings"
+    preferred_method = db.Column(db.String(50), nullable=True)  # 'online', 'offline', 'both'
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    user = db.relationship('User', backref='user_skills')
+    skill = db.relationship('Skill', backref='user_skills')
+    
+    # Unique constraint to prevent duplicate entries
+    __table_args__ = (db.UniqueConstraint('user_id', 'skill_id', 'skill_type', name='uq_user_skill_type'),)
+
+class SkillMatch(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    teacher_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    learner_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    skill_id = db.Column(db.Integer, db.ForeignKey('skill.id'), nullable=False)
+    status = db.Column(db.String(20), default='pending')  # 'pending', 'accepted', 'rejected', 'completed'
+    message = db.Column(db.Text, nullable=True)  # Initial message from learner
+    teacher_response = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    teacher = db.relationship('User', foreign_keys=[teacher_id], backref='teaching_matches')
+    learner = db.relationship('User', foreign_keys=[learner_id], backref='learning_matches')
+    skill = db.relationship('Skill', backref='matches')
+
+class SkillExchange(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user1_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    user2_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    user1_teaches_skill_id = db.Column(db.Integer, db.ForeignKey('skill.id'), nullable=False)
+    user2_teaches_skill_id = db.Column(db.Integer, db.ForeignKey('skill.id'), nullable=False)
+    status = db.Column(db.String(20), default='pending')  # 'pending', 'active', 'completed', 'cancelled'
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    user1 = db.relationship('User', foreign_keys=[user1_id])
+    user2 = db.relationship('User', foreign_keys=[user2_id])
+    user1_skill = db.relationship('Skill', foreign_keys=[user1_teaches_skill_id])
+    user2_skill = db.relationship('Skill', foreign_keys=[user2_teaches_skill_id])
+
+class SkillRating(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    rater_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    rated_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    skill_id = db.Column(db.Integer, db.ForeignKey('skill.id'), nullable=False)
+    rating = db.Column(db.Integer, nullable=False)  # 1-5 stars
+    review = db.Column(db.Text, nullable=True)
+    match_id = db.Column(db.Integer, db.ForeignKey('skill_match.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    rater = db.relationship('User', foreign_keys=[rater_id])
+    rated_user = db.relationship('User', foreign_keys=[rated_user_id])
+    skill = db.relationship('Skill')
+    match = db.relationship('SkillMatch')
+
+class UserBadge(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    badge_type = db.Column(db.String(50), nullable=False)  # 'first_skill', 'mentor', 'learner', 'expert', etc.
+    badge_name = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    icon = db.Column(db.String(100), nullable=True)
+    earned_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    user = db.relationship('User', backref='badges')
+
 # Helper functions
 def generate_otp():
     return ''.join(random.choices(string.digits, k=6))
@@ -259,6 +359,92 @@ def get_ai_response(message):
     except Exception as e:
         return f"I'm sorry, I'm having trouble processing your request. Please try again later. Error: {str(e)}"
 
+
+
+
+# Groq Client
+client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+
+def ask_database_or_chat(query):
+    """
+    Smart handler: decides if query needs DB or normal chat
+    """
+    # Step 1: Check intent using Groq
+    intent_resp = client.chat.completions.create(
+        model="llama-3.1-8b-instant",
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You are an AI that classifies user questions as 'casual_chat' or 'db_query'. "
+                    "If the user is just greeting or chatting, return 'casual_chat'. "
+                    "If the user is asking about women schemes, policies, benefits, or data lookup, return 'db_query' only."
+                )
+            },
+            {"role": "user", "content": query}
+        ]
+    )
+    intent = intent_resp.choices[0].message.content.strip().lower()
+    print("Intent Detected:", intent)
+
+    # Step 2: If casual conversation → respond like chatbot
+    if "casual_chat" in intent:
+        chat_resp = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a friendly chatbot that helps users with information about women empowerment and schemes."
+                },
+                {"role": "user", "content": query}
+            ]
+        )
+        return chat_resp.choices[0].message.content
+
+    # Step 3: If DB query → generate SQL + explain
+    conn = sqlite3.connect("app.db")
+    cur = conn.cursor()
+    try:
+        # Generate SQL
+        sql_resp = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "Convert natural language questions into valid SQLite SQL queries for the 'women_schemes' table. Only return SQL."
+                },
+                {"role": "user", "content": query}
+            ]
+        )
+        sql_query = (sql_resp.choices[0].message.content or '').strip()
+        print("Generated SQL:", sql_query)
+
+        cur.execute(sql_query)
+        result = cur.fetchall()
+
+        # Explain result
+        explain_resp = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[
+                {"role": "system", "content": "Explain SQL results in a clear way for the user."},
+                {"role": "user", "content": f"SQL Query: {sql_query}\nResult: {result}"}
+            ]
+        )
+        return explain_resp.choices[0].message.content
+
+    except Exception as e:
+        return f"⚠ Error: {e}"
+
+    finally:
+        conn.close()
+@app.route("/ask", methods=["POST"])
+def ask():
+    data = request.get_json()
+    user_query = data.get("question", "")
+    answer = ask_database_or_chat(user_query)
+    return jsonify({"question": user_query, "answer": answer})
+
+
 @app.route("/")
 def home():
     return "Her Voice Backend is running ✅"
@@ -276,36 +462,63 @@ def test_cors():
 # Authentication routes
 @app.route('/api/auth/register', methods=['POST'])
 def register():
-    data = request.get_json()
+    data = request.get_json() or {}
 
-    # Check if user already exists
-    if User.query.filter_by(email=data['email']).first():
+    email = data.get('email')
+    username = data.get('username')
+    password = data.get('password')
+
+    if not email or not username or not password:
+        return jsonify({'error': 'Username, email and password are required'}), 400
+
+    # If email exists and user is not verified, resend OTP instead of failing
+    existing = User.query.filter_by(email=email).first()
+    if existing:
+        if not existing.is_verified:
+            # Update password and optional fields if provided
+            if password:
+                existing.password_hash = hash_password(password)
+            if 'role' in data:
+                existing.role = data.get('role', existing.role)
+            if 'phone' in data:
+                existing.phone = data.get('phone', existing.phone)
+            if 'location' in data:
+                existing.location = data.get('location', existing.location)
+            if data.get('aadhaar'):
+                existing.aadhaar = str(data.get('aadhaar')).replace('-', '').strip()
+            if data.get('pan'):
+                existing.pan = str(data.get('pan')).upper().strip()
+
+            # Regenerate and send OTP
+            otp = generate_otp()
+            existing.otp = otp
+            existing.otp_created_at = datetime.utcnow()
+            db.session.commit()
+            send_otp_email(existing.email, otp)
+            return jsonify({'message': 'Account exists but is not verified. Details updated and a new OTP has been sent.'}), 200
         return jsonify({'error': 'Email already registered'}), 400
-
-    # Generate OTP
-    otp = generate_otp()
 
     # Create new user
     user = User(
-        username=data['username'],
-        email=data['email'],
-        password_hash=hash_password(data['password']),
+        username=username,
+        email=email,
+        password_hash=hash_password(password),
         role=data.get('role', 'User'),
-        aadhaar=data.get('aadhaar'),
-        pan=data.get('pan'),
-        phone=data.get('phone'),
-        location=data.get('location'),
-        otp=otp,                # ✅ Save OTP
+        aadhaar=(data.get('aadhaar') or None),
+        pan=(data.get('pan') or None),
+        phone=(data.get('phone') or None),
+        location=(data.get('location') or None),
         is_verified=False
     )
 
     db.session.add(user)
     db.session.commit()
+
+    # Generate and send OTP
     otp = generate_otp()
     user.otp = otp
     user.otp_created_at = datetime.utcnow()
     db.session.commit()
-    # Send OTP email
     send_otp_email(user.email, otp)
 
     return jsonify({'message': 'Registration successful. Please check your email for OTP verification.'}), 201
@@ -693,7 +906,7 @@ def get_posts():
                     "author": c.author.username if c.author else "Anonymous",
                     "created_at": c.created_at.isoformat()
                 }
-                for c in sorted(post.comments, key=lambda x: x.created_at, reverse=True)[:3]
+                for c in sorted(list(post.comments), key=lambda x: x.created_at, reverse=True)[:3]
             ]
         } for post in posts.items],
         'total': posts.total,
@@ -809,6 +1022,7 @@ def serve_uploaded_file(filename):
     # Serve from backend/uploads directory
     uploads_path = os.path.join(app.root_path, 'uploads')
     return send_from_directory(uploads_path, filename)
+
 
 
 # AI Chatbot routes
@@ -1139,6 +1353,414 @@ def update_settings():
     db.session.commit()
     return jsonify({'message': 'Settings updated successfully', 'preferences': user.preferences or {}}), 200
 
+# Skill Swap Helper Functions
+def award_badge(user_id, badge_type, badge_name, description, icon=None):
+    """Award a badge to a user if they don't already have it"""
+    existing_badge = UserBadge.query.filter_by(user_id=user_id, badge_type=badge_type).first()
+    if not existing_badge:
+        badge = UserBadge(
+            user_id=user_id,
+            badge_type=badge_type,
+            badge_name=badge_name,
+            description=description,
+            icon=icon
+        )
+        db.session.add(badge)
+        return True
+    return False
+
+def send_skill_match_notification(teacher_email, learner_name, skill_name):
+    """Send email notification for skill match"""
+    try:
+        msg = Message('New Skill Learning Request - Her Voice',
+                     sender=app.config['MAIL_USERNAME'],
+                     recipients=[teacher_email])
+        msg.body = f'Hi! {learner_name} is interested in learning {skill_name} from you. Check your Skill Swap dashboard to respond!'
+        mail.send(msg)
+        return True
+    except Exception as e:
+        print(f"Notification email error: {e}")
+        return False
+
+# Skill Swap API Routes
+
+# Get all skill categories
+@app.route('/api/skills/categories', methods=['GET'])
+def get_skill_categories():
+    categories = SkillCategory.query.all()
+    return jsonify({
+        'categories': [{
+            'id': cat.id,
+            'name': cat.name,
+            'description': cat.description,
+            'icon': cat.icon,
+            'skills_count': len(cat.skills)
+        } for cat in categories]
+    }), 200
+
+# Search skills
+@app.route('/api/skills/search', methods=['GET'])
+def search_skills():
+    query = request.args.get('q', '').strip()
+    category_id = request.args.get('category_id', type=int)
+    
+    skills_query = Skill.query
+    
+    if query:
+        skills_query = skills_query.filter(Skill.name.ilike(f'%{query}%'))
+    
+    if category_id:
+        skills_query = skills_query.filter_by(category_id=category_id)
+    
+    skills = skills_query.all()
+    
+    return jsonify({
+        'skills': [{
+            'id': skill.id,
+            'name': skill.name,
+            'description': skill.description,
+            'category': skill.category.name,
+            'category_id': skill.category_id
+        } for skill in skills]
+    }), 200
+
+# Add/Update user skill
+@app.route('/api/skills/user-skills', methods=['POST'])
+@jwt_required()
+def add_user_skill():
+    user_id = get_jwt_identity()
+    data = request.get_json()
+    
+    # Check if skill exists, if not create it
+    skill = Skill.query.get(data['skill_id'])
+    if not skill:
+        return jsonify({'error': 'Skill not found'}), 404
+    
+    # Check if user already has this skill with same type
+    existing = UserSkill.query.filter_by(
+        user_id=user_id,
+        skill_id=data['skill_id'],
+        skill_type=data['skill_type']
+    ).first()
+    
+    if existing:
+        # Update existing skill
+        existing.proficiency_level = data.get('proficiency_level')
+        existing.description = data.get('description')
+        existing.availability = data.get('availability')
+        existing.preferred_method = data.get('preferred_method')
+        existing.is_active = data.get('is_active', True)
+        existing.updated_at = datetime.utcnow()
+    else:
+        # Create new user skill
+        user_skill = UserSkill(
+            user_id=user_id,
+            skill_id=data['skill_id'],
+            skill_type=data['skill_type'],
+            proficiency_level=data.get('proficiency_level'),
+            description=data.get('description'),
+            availability=data.get('availability'),
+            preferred_method=data.get('preferred_method'),
+            is_active=data.get('is_active', True)
+        )
+        db.session.add(user_skill)
+        
+        # Award first skill badge
+        if data['skill_type'] == 'teach':
+            award_badge(user_id, 'first_teach', 'First Teacher', 'Added your first skill to teach!')
+        else:
+            award_badge(user_id, 'first_learn', 'Eager Learner', 'Added your first skill to learn!')
+    
+    db.session.commit()
+    return jsonify({'message': 'Skill added/updated successfully'}), 201
+
+# Get user's skills
+@app.route('/api/skills/user-skills', methods=['GET'])
+@jwt_required()
+def get_user_skills():
+    user_id = get_jwt_identity()
+    skill_type = request.args.get('type')  # 'teach' or 'learn'
+    
+    query = UserSkill.query.filter_by(user_id=user_id, is_active=True)
+    
+    if skill_type:
+        query = query.filter_by(skill_type=skill_type)
+    
+    user_skills = query.all()
+    
+    return jsonify({
+        'skills': [{
+            'id': us.id,
+            'skill': {
+                'id': us.skill.id,
+                'name': us.skill.name,
+                'category': us.skill.category.name
+            },
+            'skill_type': us.skill_type,
+            'proficiency_level': us.proficiency_level,
+            'description': us.description,
+            'availability': us.availability,
+            'preferred_method': us.preferred_method,
+            'created_at': us.created_at.isoformat(),
+            'updated_at': us.updated_at.isoformat()
+        } for us in user_skills]
+    }), 200
+
+# Browse available skills (what others are teaching)
+@app.route('/api/skills/browse', methods=['GET'])
+@jwt_required()
+def browse_skills():
+    current_user_id = get_jwt_identity()
+    category_id = request.args.get('category_id', type=int)
+    skill_name = request.args.get('skill_name', '').strip()
+    location = request.args.get('location', '').strip()
+    method = request.args.get('method')  # 'online', 'offline', 'both'
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 10, type=int)
+    
+    # Query for users teaching skills (excluding current user)
+    query = db.session.query(UserSkill, User, Skill, SkillCategory).join(
+        User, UserSkill.user_id == User.id
+    ).join(
+        Skill, UserSkill.skill_id == Skill.id
+    ).join(
+        SkillCategory, Skill.category_id == SkillCategory.id
+    ).filter(
+        UserSkill.skill_type == 'teach',
+        UserSkill.is_active == True,
+        UserSkill.user_id != current_user_id
+    )
+    
+    # Apply filters
+    if category_id:
+        query = query.filter(Skill.category_id == category_id)
+    
+    if skill_name:
+        query = query.filter(Skill.name.ilike(f'%{skill_name}%'))
+    
+    if location:
+        query = query.filter(User.location.ilike(f'%{location}%'))
+    
+    if method:
+        query = query.filter(UserSkill.preferred_method.in_([method, 'both']))
+    
+    # Paginate results
+    results = query.paginate(page=page, per_page=per_page, error_out=False)
+    
+    return jsonify({
+        'skills': [{
+            'id': user_skill.id,
+            'skill': {
+                'id': skill.id,
+                'name': skill.name,
+                'description': skill.description,
+                'category': category.name
+            },
+            'teacher': {
+                'id': user.id,
+                'username': user.username,
+                'location': user.location,
+                'profile_image': user.profile_image
+            },
+            'proficiency_level': user_skill.proficiency_level,
+            'description': user_skill.description,
+            'availability': user_skill.availability,
+            'preferred_method': user_skill.preferred_method,
+            'created_at': user_skill.created_at.isoformat()
+        } for user_skill, user, skill, category in results.items],
+        'total': results.total,
+        'pages': results.pages,
+        'current_page': page
+    }), 200
+
+# Request to learn from someone
+@app.route('/api/skills/request-match', methods=['POST'])
+@jwt_required()
+def request_skill_match():
+    learner_id = get_jwt_identity()
+    data = request.get_json()
+    
+    teacher_id = data.get('teacher_id')
+    skill_id = data.get('skill_id')
+    message = data.get('message', '')
+    
+    # Validate that teacher actually teaches this skill
+    teacher_skill = UserSkill.query.filter_by(
+        user_id=teacher_id,
+        skill_id=skill_id,
+        skill_type='teach',
+        is_active=True
+    ).first()
+    
+    if not teacher_skill:
+        return jsonify({'error': 'Teacher does not offer this skill'}), 400
+    
+    # Check if request already exists
+    existing_match = SkillMatch.query.filter_by(
+        teacher_id=teacher_id,
+        learner_id=learner_id,
+        skill_id=skill_id,
+        status='pending'
+    ).first()
+    
+    if existing_match:
+        return jsonify({'error': 'Request already sent'}), 400
+    
+    # Create skill match request
+    skill_match = SkillMatch(
+        teacher_id=teacher_id,
+        learner_id=learner_id,
+        skill_id=skill_id,
+        message=message,
+        status='pending'
+    )
+    
+    db.session.add(skill_match)
+    db.session.commit()
+    
+    # Send notification to teacher
+    teacher = User.query.get(teacher_id)
+    learner = User.query.get(learner_id)
+    skill = Skill.query.get(skill_id)
+    
+    send_skill_match_notification(teacher.email, learner.username, skill.name)
+    
+    return jsonify({'message': 'Learning request sent successfully'}), 201
+
+# Get skill match requests
+@app.route('/api/skills/match-requests', methods=['GET'])
+@jwt_required()
+def get_match_requests():
+    user_id = get_jwt_identity()
+    request_type = request.args.get('type', 'received')  # 'received' or 'sent'
+    status = request.args.get('status')  # 'pending', 'accepted', 'rejected'
+    
+    if request_type == 'received':
+        query = SkillMatch.query.filter_by(teacher_id=user_id)
+    else:
+        query = SkillMatch.query.filter_by(learner_id=user_id)
+    
+    if status:
+        query = query.filter_by(status=status)
+    
+    matches = query.order_by(SkillMatch.created_at.desc()).all()
+    
+    return jsonify({
+        'matches': [{
+            'id': match.id,
+            'skill': {
+                'id': match.skill.id,
+                'name': match.skill.name,
+                'category': match.skill.category.name
+            },
+            'teacher': {
+                'id': match.teacher.id,
+                'username': match.teacher.username,
+                'profile_image': match.teacher.profile_image
+            },
+            'learner': {
+                'id': match.learner.id,
+                'username': match.learner.username,
+                'profile_image': match.learner.profile_image
+            },
+            'message': match.message,
+            'teacher_response': match.teacher_response,
+            'status': match.status,
+            'created_at': match.created_at.isoformat(),
+            'updated_at': match.updated_at.isoformat()
+        } for match in matches]
+    }), 200
+
+# Respond to skill match request
+@app.route('/api/skills/match-requests/<int:match_id>/respond', methods=['POST'])
+@jwt_required()
+def respond_to_match_request(match_id):
+    user_id = get_jwt_identity()
+    data = request.get_json()
+    
+    match = SkillMatch.query.get_or_404(match_id)
+    
+    # Only teacher can respond
+    if match.teacher_id != user_id:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    if match.status != 'pending':
+        return jsonify({'error': 'Request already responded to'}), 400
+    
+    action = data.get('action')  # 'accept' or 'reject'
+    response_message = data.get('message', '')
+    
+    if action == 'accept':
+        match.status = 'accepted'
+        # Award mentor badge to teacher
+        award_badge(user_id, 'mentor', 'Mentor', 'Started mentoring someone!')
+        # Award active learner badge to learner
+        award_badge(match.learner_id, 'active_learner', 'Active Learner', 'Got accepted for learning!')
+    elif action == 'reject':
+        match.status = 'rejected'
+    else:
+        return jsonify({'error': 'Invalid action'}), 400
+    
+    match.teacher_response = response_message
+    match.updated_at = datetime.utcnow()
+    
+    db.session.commit()
+    
+    return jsonify({'message': f'Request {action}ed successfully'}), 200
+
+# Get user's badges
+@app.route('/api/skills/badges', methods=['GET'])
+@jwt_required()
+def get_user_badges():
+    user_id = get_jwt_identity()
+    badges = UserBadge.query.filter_by(user_id=user_id).order_by(UserBadge.earned_at.desc()).all()
+    
+    return jsonify({
+        'badges': [{
+            'id': badge.id,
+            'badge_type': badge.badge_type,
+            'badge_name': badge.badge_name,
+            'description': badge.description,
+            'icon': badge.icon,
+            'earned_at': badge.earned_at.isoformat()
+        } for badge in badges]
+    }), 200
+
+# Get skill statistics
+@app.route('/api/skills/stats', methods=['GET'])
+@jwt_required()
+def get_skill_stats():
+    user_id = get_jwt_identity()
+    
+    # User's teaching stats
+    teaching_count = UserSkill.query.filter_by(user_id=user_id, skill_type='teach', is_active=True).count()
+    learning_count = UserSkill.query.filter_by(user_id=user_id, skill_type='learn', is_active=True).count()
+    
+    # Match stats
+    teaching_requests = SkillMatch.query.filter_by(teacher_id=user_id).count()
+    learning_requests = SkillMatch.query.filter_by(learner_id=user_id).count()
+    accepted_teaching = SkillMatch.query.filter_by(teacher_id=user_id, status='accepted').count()
+    accepted_learning = SkillMatch.query.filter_by(learner_id=user_id, status='accepted').count()
+    
+    # Ratings received
+    ratings = SkillRating.query.filter_by(rated_user_id=user_id).all()
+    avg_rating = sum(r.rating for r in ratings) / len(ratings) if ratings else 0
+    
+    # Badge count
+    badge_count = UserBadge.query.filter_by(user_id=user_id).count()
+    
+    return jsonify({
+        'teaching_skills': teaching_count,
+        'learning_skills': learning_count,
+        'teaching_requests_received': teaching_requests,
+        'learning_requests_sent': learning_requests,
+        'active_teaching_matches': accepted_teaching,
+        'active_learning_matches': accepted_learning,
+        'average_rating': round(avg_rating, 1),
+        'total_ratings': len(ratings),
+        'badges_earned': badge_count
+    }), 200
+
 # Initialize database
 @app.route('/api/init-db', methods=['POST'])
 def init_database():
@@ -1217,9 +1839,86 @@ def init_database():
             scheme = GovernmentScheme(**scheme_data)
             db.session.add(scheme)
     
+    # Add sample skill categories and skills
+    skill_categories = [
+        {'name': 'Technology', 'description': 'Programming, web development, data science', 'icon': '💻'},
+        {'name': 'Creative Arts', 'description': 'Design, photography, writing, music', 'icon': '🎨'},
+        {'name': 'Business & Finance', 'description': 'Marketing, accounting, entrepreneurship', 'icon': '💼'},
+        {'name': 'Languages', 'description': 'English, Spanish, French, local languages', 'icon': '🗣️'},
+        {'name': 'Health & Wellness', 'description': 'Yoga, nutrition, mental health', 'icon': '🧘'},
+        {'name': 'Crafts & DIY', 'description': 'Knitting, cooking, gardening, handicrafts', 'icon': '🧶'},
+        {'name': 'Education & Training', 'description': 'Teaching, tutoring, skill development', 'icon': '📚'},
+        {'name': 'Life Skills', 'description': 'Communication, leadership, time management', 'icon': '🌟'}
+    ]
+    
+    for cat_data in skill_categories:
+        existing_cat = SkillCategory.query.filter_by(name=cat_data['name']).first()
+        if not existing_cat:
+            category = SkillCategory(**cat_data)
+            db.session.add(category)
+    
+    db.session.commit()  # Commit categories first
+    
+    # Add sample skills
+    sample_skills = [
+        # Technology
+        {'name': 'Python Programming', 'category': 'Technology', 'description': 'Learn Python for web development and data science'},
+        {'name': 'Web Development', 'category': 'Technology', 'description': 'HTML, CSS, JavaScript, React'},
+        {'name': 'Data Analysis', 'category': 'Technology', 'description': 'Excel, SQL, data visualization'},
+        {'name': 'Digital Marketing', 'category': 'Technology', 'description': 'Social media, SEO, content marketing'},
+        
+        # Creative Arts
+        {'name': 'Graphic Design', 'category': 'Creative Arts', 'description': 'Photoshop, Illustrator, design principles'},
+        {'name': 'Photography', 'category': 'Creative Arts', 'description': 'Portrait, landscape, photo editing'},
+        {'name': 'Creative Writing', 'category': 'Creative Arts', 'description': 'Storytelling, blogging, copywriting'},
+        {'name': 'Music Production', 'category': 'Creative Arts', 'description': 'Audio editing, composition, instruments'},
+        
+        # Business & Finance
+        {'name': 'Financial Planning', 'category': 'Business & Finance', 'description': 'Budgeting, investments, savings'},
+        {'name': 'Entrepreneurship', 'category': 'Business & Finance', 'description': 'Starting a business, business planning'},
+        {'name': 'Project Management', 'category': 'Business & Finance', 'description': 'Planning, execution, team coordination'},
+        
+        # Languages
+        {'name': 'English Communication', 'category': 'Languages', 'description': 'Speaking, writing, grammar'},
+        {'name': 'Spanish Language', 'category': 'Languages', 'description': 'Conversational Spanish, grammar'},
+        {'name': 'Hindi Language', 'category': 'Languages', 'description': 'Speaking and writing Hindi'},
+        
+        # Health & Wellness
+        {'name': 'Yoga & Meditation', 'category': 'Health & Wellness', 'description': 'Asanas, breathing, mindfulness'},
+        {'name': 'Nutrition Counseling', 'category': 'Health & Wellness', 'description': 'Healthy eating, meal planning'},
+        {'name': 'Mental Health Support', 'category': 'Health & Wellness', 'description': 'Stress management, counseling'},
+        
+        # Crafts & DIY
+        {'name': 'Cooking & Baking', 'category': 'Crafts & DIY', 'description': 'Traditional recipes, baking techniques'},
+        {'name': 'Knitting & Sewing', 'category': 'Crafts & DIY', 'description': 'Clothing, accessories, repairs'},
+        {'name': 'Gardening', 'category': 'Crafts & DIY', 'description': 'Indoor plants, vegetable gardening'},
+        
+        # Education & Training
+        {'name': 'Math Tutoring', 'category': 'Education & Training', 'description': 'School math, competitive exams'},
+        {'name': 'Science Teaching', 'category': 'Education & Training', 'description': 'Physics, chemistry, biology'},
+        {'name': 'Career Counseling', 'category': 'Education & Training', 'description': 'Resume writing, interview prep'},
+        
+        # Life Skills
+        {'name': 'Public Speaking', 'category': 'Life Skills', 'description': 'Confidence, presentation skills'},
+        {'name': 'Leadership Development', 'category': 'Life Skills', 'description': 'Team management, decision making'},
+        {'name': 'Time Management', 'category': 'Life Skills', 'description': 'Productivity, organization, planning'}
+    ]
+    
+    for skill_data in sample_skills:
+        existing_skill = Skill.query.filter_by(name=skill_data['name']).first()
+        if not existing_skill:
+            category = SkillCategory.query.filter_by(name=skill_data['category']).first()
+            if category:
+                skill = Skill(
+                    name=skill_data['name'],
+                    category_id=category.id,
+                    description=skill_data['description']
+                )
+                db.session.add(skill)
+    
     db.session.commit()
     
-    return jsonify({'message': 'Database initialized successfully with demo user'}), 200
+    return jsonify({'message': 'Database initialized successfully with demo user and skill swap data'}), 200
 
 if __name__ == '__main__':
     with app.app_context():

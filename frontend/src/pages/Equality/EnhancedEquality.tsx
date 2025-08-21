@@ -1,0 +1,267 @@
+import React, { useState, useEffect } from 'react';
+import { useSelector, useDispatch } from 'react-redux';
+import {
+  Grid,
+  Card,
+  CardContent,
+  Typography,
+  Box,
+  Button,
+  TextField,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
+  Chip,
+  CircularProgress,
+  Alert,
+  Paper
+} from '@mui/material';
+import { RootState, AppDispatch } from '../../store/index';
+import { fetchCompanyRatings, rateCompany, fetchDashboard } from '../../store/slices/equalitySlice';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
+
+const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7300', '#00ff00'];
+
+const EnhancedEquality: React.FC = () => {
+  const dispatch = useDispatch<AppDispatch>();
+  const { companies, dashboard, loading } = useSelector((state: RootState) => state.equality);
+  
+  const [selectedCompany, setSelectedCompany] = useState<string>('');
+  const [feedbackForm, setFeedbackForm] = useState({
+    name: '',
+    email: '',
+    feedback_type: 'suggestion',
+    message: ''
+  });
+
+  useEffect(() => {
+    dispatch(fetchCompanyRatings());
+    dispatch(fetchDashboard());
+  }, [dispatch]);
+
+  const handleFeedbackSubmit = () => {
+    // Handle feedback submission
+    console.log('Feedback submitted:', feedbackForm);
+    // Reset form
+    setFeedbackForm({
+      name: '',
+      email: '',
+      feedback_type: 'suggestion',
+      message: ''
+    });
+  };
+
+  const payGapData = [
+    { sector: 'Technology', pay_gap: 18.2 },
+    { sector: 'Healthcare', pay_gap: 25.1 },
+    { sector: 'Finance', pay_gap: 30.5 },
+    { sector: 'Education', pay_gap: 15.8 },
+    { sector: 'Manufacturing', pay_gap: 22.3 }
+  ];
+
+  const leadershipData = [
+    { name: 'Women', value: 28.3 },
+    { name: 'Men', value: 71.7 }
+  ];
+
+  const fieldRatioData = [
+    { field: 'IT', women: 45, men: 55 },
+    { field: 'Finance', women: 35, men: 65 },
+    { field: 'Healthcare', women: 65, men: 35 },
+    { field: 'Education', women: 55, men: 45 }
+  ];
+
+  return (
+    <Box sx={{ p: 3, bgcolor: '#f5f5f5', minHeight: '100vh' }}>
+      <Typography variant="h3" gutterBottom sx={{ color: '#1976d2', fontWeight: 'bold', textAlign: 'center', mb: 4 }}>
+        Gender Equality Hub
+      </Typography>
+
+      <Grid container spacing={4}>
+        {/* Gender Pay Gap Section */}
+        <Grid item xs={12} md={6}>
+          <Card sx={{ boxShadow: 3, borderRadius: 2 }}>
+            <CardContent>
+              <Typography variant="h5" gutterBottom sx={{ color: '#1976d2' }}>
+                Gender Pay Gap Overview
+              </Typography>
+              <Typography variant="h2" sx={{ color: '#1976d2', fontWeight: 'bold' }}>
+                {dashboard?.gender_pay_gap?.overall || 0}%
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Average gender pay gap across all sectors
+              </Typography>
+              <Box sx={{ mt: 2 }}>
+                <BarChart width={300} height={200} data={payGapData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="sector" />
+                  <YAxis />
+                  <Tooltip />
+                  <Bar dataKey="pay_gap" fill="#8884d8" />
+                </BarChart>
+              </Box>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* Women in Leadership Section */}
+        <Grid item xs={12} md={6}>
+          <Card sx={{ boxShadow: 3, borderRadius: 2 }}>
+            <CardContent>
+              <Typography variant="h5" gutterBottom sx={{ color: '#9c27b0' }}>
+                Women in Leadership
+              </Typography>
+              <Typography variant="h2" sx={{ color: '#9c27b0', fontWeight: 'bold' }}>
+                {dashboard?.leadership_diversity?.women_in_leadership || 0}%
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Percentage of women in leadership positions
+              </Typography>
+              <Box sx={{ mt: 2 }}>
+                <PieChart width={300} height={200}>
+                  <Pie
+                    data={[{ name: 'Women', value: 28.3 }, { name: 'Men', value: 71.7 }]}
+                    cx={150}
+                    cy={100}
+                    outerRadius={80}
+                    fill="#8884d8"
+                    dataKey="value"
+                  >
+                    {[{ name: 'Women', value: 28.3 }, { name: 'Men', value: 71.7 }].map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </Box>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* Market Overview Section */}
+        <Grid item xs={12} md={6}>
+          <Card sx={{ boxShadow: 3, borderRadius: 2 }}>
+            <CardContent>
+              <Typography variant="h5" gutterBottom sx={{ color: '#ff9800' }}>
+                Market Overview
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                Women vs Men Ratio by Field
+              </Typography>
+              <BarChart width={300} height={200} data={fieldRatioData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="field" />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="women" fill="#82ca9d" name="Women" />
+                <Bar dataKey="men" fill="#8884d8" name="Men" />
+              </BarChart>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* Company Selection Section */}
+        <Grid item xs={12} md={6}>
+          <Card sx={{ boxShadow: 3, borderRadius: 2 }}>
+            <CardContent>
+              <Typography variant="h5" gutterBottom sx={{ color: '#4caf50' }}>
+                Company Ratings
+              </Typography>
+              <FormControl fullWidth sx={{ mb: 2 }}>
+                <InputLabel>Select Company</InputLabel>
+                <Select
+                  value={selectedCompany}
+                  onChange={(e) => setSelectedCompany(e.target.value)}
+                >
+                  {companies.map((company) => (
+                    <MenuItem key={company.name} value={company.name}>
+                      {company.name}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              {selectedCompany && (
+                <Box>
+                  <Typography variant="h6">{selectedCompany}</Typography>
+                  <Typography variant="body2">
+                    Safety: {companies.find(c => c.name === selectedCompany)?.avg_safety || 0}/5
+                  </Typography>
+                  <Typography variant="body2">
+                    Pay Equality: {companies.find(c => c.name === selectedCompany)?.avg_pay_equality || 0}/5
+                  </Typography>
+                </Box>
+              )}
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* Feedback Form Section */}
+        <Grid item xs={12}>
+          <Card sx={{ boxShadow: 3, borderRadius: 2 }}>
+            <CardContent>
+              <Typography variant="h5" gutterBottom sx={{ color: '#ff5722' }}>
+                Feedback & Suggestions
+              </Typography>
+              <Grid container spacing={2}>
+                <Grid item xs={12} md={6}>
+                  <TextField
+                    fullWidth
+                    label="Name"
+                    value={feedbackForm.name}
+                    onChange={(e) => setFeedbackForm({...feedbackForm, name: e.target.value})}
+                  />
+                </Grid>
+                <Grid item xs={12} md={6}>
+                  <TextField
+                    fullWidth
+                    label="Email"
+                    type="email"
+                    value={feedbackForm.email}
+                    onChange={(e) => setFeedbackForm({...feedbackForm, email: e.target.value})}
+                  />
+                </Grid>
+                <Grid item xs={12} md={6}>
+                  <FormControl fullWidth>
+                    <InputLabel>Feedback Type</InputLabel>
+                    <Select
+                      value={feedbackForm.feedback_type}
+                      onChange={(e) => setFeedbackForm({...feedbackForm, feedback_type: e.target.value})}
+                    >
+                      <MenuItem value="suggestion">Suggestion</MenuItem>
+                      <MenuItem value="complaint">Complaint</MenuItem>
+                      <MenuItem value="appreciation">Appreciation</MenuItem>
+                    </Select>
+                  </FormControl>
+                </Grid>
+                <Grid item xs={12}>
+                  <TextField
+                    fullWidth
+                    multiline
+                    rows={4}
+                    label="Message"
+                    value={feedbackForm.message}
+                    onChange={(e) => setFeedbackForm({...feedbackForm, message: e.target.value})}
+                  />
+                </Grid>
+                <Grid item xs={12}>
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    onClick={handleFeedbackSubmit}
+                    disabled={!feedbackForm.name || !feedbackForm.email || !feedbackForm.message}
+                  >
+                    Submit Feedback
+                  </Button>
+                </Grid>
+              </Grid>
+            </CardContent>
+          </Card>
+        </Grid>
+      </Grid>
+    </Box>
+  );
+};
+
+export default EnhancedEquality;
