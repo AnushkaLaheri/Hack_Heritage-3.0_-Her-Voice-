@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
+import { useNavigate } from 'react-router-dom';
 import {
   Grid,
   Card,
@@ -19,12 +20,22 @@ import {
   Slider,
   LinearProgress,
   Alert,  
+  Paper,
+  Stack,
 } from '@mui/material';
+import {
+  Equalizer,
+  BarChart,
+  PieChart,
+  TrendingUp,
+  ArrowForward
+} from '@mui/icons-material';
 import { RootState, AppDispatch } from '../../store/index';
 import { fetchCompanyRatings, rateCompany, fetchDashboard } from '../../store/slices/equalitySlice';
 
 const Equality: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
+  const navigate = useNavigate();
   const { companies, dashboard, loading } = useSelector((state: RootState) => state.equality);
 
   useEffect(() => {
@@ -37,6 +48,45 @@ const Equality: React.FC = () => {
       <Typography variant="h4" gutterBottom>
         Gender Equality Hub
       </Typography>
+
+      {/* Navigation Section */}
+      <Paper elevation={2} sx={{ p: 3, mb: 4, bgcolor: 'primary.light', color: 'white' }}>
+        <Typography variant="h6" gutterBottom sx={{ color: 'white' }}>
+          Explore Different Views
+        </Typography>
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+          <Button
+            variant="contained"
+            color="secondary"
+            startIcon={<Equalizer />}
+            onClick={() => navigate('/equality')}
+            sx={{ flex: 1 }}
+          >
+            Basic View
+          </Button>
+          <Button
+            variant="contained"
+            color="secondary"
+            startIcon={<BarChart />}
+            onClick={() => navigate('/enhanced-equality')}
+            sx={{ flex: 1 }}
+          >
+            Enhanced View
+          </Button>
+          <Button
+            variant="contained"
+            color="secondary"
+            startIcon={<TrendingUp />}
+            onClick={() => navigate('/complete-equality')}
+            sx={{ flex: 1 }}
+          >
+            Complete View
+          </Button>
+        </Stack>
+        <Typography variant="body2" sx={{ mt: 2, color: 'white', opacity: 0.9 }}>
+          Choose from different perspectives to analyze gender equality data
+        </Typography>
+      </Paper>
       
       <Grid container spacing={3}>
         <Grid item xs={12} md={6}>

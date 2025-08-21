@@ -52,10 +52,13 @@ mail = Mail(app)
 # Configure CORS - Allow all origins for development
 CORS(app, 
      origins=[
-         "http://localhost:3000", 
-         "http://127.0.0.1:3000",
-         "https://her-voice-six.vercel.app",
-         "https://her-voice-six.vercel.app/"
+         "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "https://her-voice-six.vercel.app",
+        "https://her-voice-six.vercel.app/*",
+        "https://www.her-voice-six.vercel.app",
+        "https://www.her-voice-six.vercel.app/*"
+         
      ],
      methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
      allow_headers=["Content-Type", "Authorization", "Access-Control-Allow-Credentials"],
@@ -1135,9 +1138,14 @@ def get_company_ratings():
     # Calculate averages
     for company in company_stats.values():
         total = company['total_ratings']
-        company['avg_safety'] /= total
-        company['avg_pay_equality'] /= total
-        company['avg_culture'] /= total
+        if total > 0:
+            company['avg_safety'] = round(company['avg_safety'] / total, 1)
+            company['avg_pay_equality'] = round(company['avg_pay_equality'] / total, 1)
+            company['avg_culture'] = round(company['avg_culture'] / total, 1)
+        else:
+            company['avg_safety'] = 0
+            company['avg_pay_equality'] = 0
+            company['avg_culture'] = 0
     
     return jsonify({'companies': list(company_stats.values())}), 200
 
@@ -1147,50 +1155,136 @@ def rate_company():
     user_id = get_jwt_identity()
     data = request.get_json()
     
-    rating = CompanyRating(
-        company_name=data['company_name'],
-        safety_rating=data['safety_rating'],
-        pay_equality_rating=data['pay_equality_rating'],
-        culture_rating=data['culture_rating'],
+    # Check if user already rated this company
+    existing_rating = CompanyRating.query.filter_by(
         user_id=user_id,
-        comment=data.get('comment'),
-        is_anonymous=data.get('is_anonymous', True)
-    )
+        company_name=data['company_name']
+    ).first()
     
-    db.session.add(rating)
+    if existing_rating:
+        # Update existing rating
+        existing_rating.safety_rating = data['safety_rating']
+        existing_rating.pay_equality_rating = data['pay_equality_rating']
+        existing_rating.culture_rating = data['culture_rating']
+        existing_rating.comment = data.get('comment')
+        existing_rating.is_anonymous = data.get('is_anonymous', True)
+    else:
+        # Create new rating
+        rating = CompanyRating(
+            company_name=data['company_name'],
+            safety_rating=data['safety_rating'],
+            pay_equality_rating=data['pay_equality_rating'],
+            culture_rating=data['culture_rating'],
+            user_id=user_id,
+            comment=data.get('comment'),
+            is_anonymous=data.get('is_anonymous', True)
+        )
+        db.session.add(rating)
+    
     db.session.commit()
     
     return jsonify({'message': 'Company rated successfully'}), 201
 
 @app.route('/api/equality/dashboard', methods=['GET'])
 def get_equality_dashboard():
-    # Mock dashboard data
+    # Calculate real statistics from the database
+    from sqlalchemy import func
+    
+    # Get overall statistics
+    total_ratings = CompanyRating.query.count()
+    avg_safety = db.session.query(func.avg(CompanyRating.safety_rating)).scalar() or 0
+    avg_pay_equality = db.session.query(func.avg(CompanyRating.pay_equality_rating)).scalar() or 0
+    avg_culture = db.session.query(func.avg(CompanyRating.culture_rating)).scalar() or 0
+    
+    # Get ratings by company for sector breakdown (mock sectors for now)
+    companies = CompanyRating.query.all()
+    sector_ratings = {}
+    
+    for rating in companies:
+        # For demo purposes, assign companies to sectors based on name patterns
+        sector = 'Other'
+        company_lower = rating.company_name.lower()
+        
+        if any(tech in company_lower for tech in ['tech', 'software', 'it', 'digital']):
+            sector = 'Technology'
+        elif any(health in company_lower for health in ['health', 'medical', 'hospital', 'care']):
+            sector = 'Healthcare'
+        elif any(finance in company_lower for finance in ['bank', 'finance', 'investment', 'insurance']):
+            sector = 'Finance'
+        elif any(edu in company_lower for edu in ['school', 'college', 'university', 'education']):
+            sector = 'Education'
+        
+        if sector not in sector_ratings:
+            sector_ratings[sector] = {
+                'total_ratings': 0,
+                'avg_safety': 0,
+                'avg_pay_equality': 0,
+                'avg_culture': 0
+            }
+        
+        sector_ratings[sector]['total_ratings'] += 1
+        sector_ratings[sector]['avg_safety'] += rating.safety_rating
+        sector_ratings[sector]['avg_pay_equality'] += rating.pay_equality_rating
+        sector_ratings[sector]['avg_culture'] += rating.culture_rating
+    
+    # Calculate sector averages
+    for sector, stats in sector_ratings.items():
+        if stats['total_ratings'] > 0:
+            stats['avg_safety'] = round(stats['avg_safety'] / stats['total_ratings'], 1)
+            stats['avg_pay_equality'] = round(stats['avg_pay_equality'] / stats['total_ratings'], 1)
+            stats['avg_culture'] = round(stats['avg_culture'] / stats['total_ratings'], 1)
+    
+    # Prepare dashboard data
     dashboard_data = {
         'gender_pay_gap': {
-            'overall': 23.5,
-            'by_sector': {
-                'Technology': 18.2,
-                'Healthcare': 25.1,
-                'Finance': 30.5,
-                'Education': 15.8
-            }
+            'overall': round(100 - (avg_pay_equality * 20), 1),  # Convert 1-5 scale to percentage
+            'by_sector': {sector: round(100 - (stats['avg_pay_equality'] * 20), 1) 
+                         for sector, stats in sector_ratings.items()}
         },
         'leadership_diversity': {
-            'women_in_leadership': 28.3,
-            'board_diversity': 22.1
+            'women_in_leadership': round(avg_culture * 20, 1),  # Convert 1-5 scale to percentage
+            'board_diversity': round((avg_safety + avg_culture) * 10, 1)  # Combined metric
         },
         'harassment_reports': {
-            'total_reports': 1250,
-            'by_sector': {
-                'Technology': 320,
-                'Healthcare': 280,
-                'Finance': 450,
-                'Education': 200
-            }
+            'total_reports': total_ratings,  # Using total ratings as proxy for reports
+            'by_sector': {sector: stats['total_ratings'] for sector, stats in sector_ratings.items()}
         }
     }
     
     return jsonify(dashboard_data), 200
+
+# Test route to add sample company ratings
+@app.route('/api/equality/test-data', methods=['POST'])
+def add_test_data():
+    try:
+        # Sample company ratings
+        sample_ratings = [
+            {'company_name': 'Google', 'safety_rating': 4.5, 'pay_equality_rating': 3.8, 'culture_rating': 4.2, 'user_id': 1},
+            {'company_name': 'Microsoft', 'safety_rating': 4.3, 'pay_equality_rating': 4.0, 'culture_rating': 4.1, 'user_id': 1},
+            {'company_name': 'Amazon', 'safety_rating': 3.8, 'pay_equality_rating': 3.5, 'culture_rating': 3.6, 'user_id': 1},
+            {'company_name': 'Apple', 'safety_rating': 4.2, 'pay_equality_rating': 3.9, 'culture_rating': 4.0, 'user_id': 1},
+            {'company_name': 'Meta', 'safety_rating': 4.1, 'pay_equality_rating': 3.7, 'culture_rating': 3.9, 'user_id': 1},
+            {'company_name': 'Johnson & Johnson', 'safety_rating': 4.4, 'pay_equality_rating': 4.2, 'culture_rating': 4.3, 'user_id': 1},
+            {'company_name': 'Pfizer', 'safety_rating': 4.2, 'pay_equality_rating': 4.1, 'culture_rating': 4.0, 'user_id': 1},
+            {'company_name': 'JPMorgan Chase', 'safety_rating': 3.9, 'pay_equality_rating': 3.6, 'culture_rating': 3.7, 'user_id': 1},
+            {'company_name': 'Goldman Sachs', 'safety_rating': 3.7, 'pay_equality_rating': 3.4, 'culture_rating': 3.5, 'user_id': 1}
+        ]
+        
+        # Clear existing ratings
+        CompanyRating.query.delete()
+        
+        # Add new ratings
+        for rating_data in sample_ratings:
+            rating = CompanyRating(**rating_data)
+            db.session.add(rating)
+        
+        db.session.commit()
+        
+        return jsonify({'message': 'Test data added successfully', 'count': len(sample_ratings)}), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
 
 # Government Schemes routes
 @app.route('/api/schemes', methods=['GET'])
@@ -1760,6 +1854,51 @@ def get_skill_stats():
         'total_ratings': len(ratings),
         'badges_earned': badge_count
     }), 200
+
+# Delete user skill
+@app.route('/api/skills/user-skills/<int:skill_id>', methods=['DELETE'])
+@jwt_required()
+def delete_user_skill(skill_id):
+    user_id = get_jwt_identity()
+    user_skill = UserSkill.query.filter_by(id=skill_id, user_id=user_id).first_or_404()
+    
+    db.session.delete(user_skill)
+    db.session.commit()
+    
+    return jsonify({'message': 'Skill deleted successfully'}), 200
+
+# Rate a skill/user
+@app.route('/api/skills/rate', methods=['POST'])
+@jwt_required()
+def rate_skill():
+    user_id = get_jwt_identity()
+    data = request.get_json()
+    
+    # Check if user already rated this skill/user combination
+    existing_rating = SkillRating.query.filter_by(
+        rater_id=user_id,
+        rated_user_id=data['rated_user_id'],
+        skill_id=data['skill_id']
+    ).first()
+    
+    if existing_rating:
+        # Update existing rating
+        existing_rating.rating = data['rating']
+        existing_rating.review = data.get('review')
+    else:
+        # Create new rating
+        rating = SkillRating(
+            rater_id=user_id,
+            rated_user_id=data['rated_user_id'],
+            skill_id=data['skill_id'],
+            rating=data['rating'],
+            review=data.get('review'),
+            match_id=data.get('match_id')
+        )
+        db.session.add(rating)
+    
+    db.session.commit()
+    return jsonify({'message': 'Rating submitted successfully'}), 201
 
 # Initialize database
 @app.route('/api/init-db', methods=['POST'])

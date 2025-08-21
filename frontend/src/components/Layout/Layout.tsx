@@ -57,7 +57,7 @@ const Layout: React.FC = () => {
     { text: 'Home', icon: <Home />, path: '/' },
     { text: 'My Posts', icon: <Article />, path: '/posts' },
     { text: 'Emergency Help', icon: <Warning />, path: '/emergency' },
-    { text: 'Gender Equality', icon: <Equalizer />, path: '/equality' },
+    { text: 'Gender Equality', icon: <Equalizer />, path: '/enhanced-equality' },
     { text: 'Government Schemes', icon: <Description />, path: '/schemes' },
     { text: 'Skill Swap', icon: <Support />, path: '/skill-swap' },
     { text: 'My Profile', icon: <Person />, path: '/profile' },

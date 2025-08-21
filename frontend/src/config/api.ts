@@ -1,3 +1,7 @@
+// Log the API URL being used for debugging
+console.log('🔧 API Config - Environment:', process.env.NODE_ENV);
+console.log('🌐 API Config - Base URL:', process.env.REACT_APP_API_URL || 'http://localhost:5000');
+
 // API Configuration
 export const API_CONFIG = {
   // Base URL for API requests - automatically switches based on environment

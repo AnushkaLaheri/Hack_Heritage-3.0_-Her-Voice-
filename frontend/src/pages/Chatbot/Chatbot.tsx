@@ -3,7 +3,7 @@ import {
   Box, Typography, Paper, TextField, IconButton, List, ListItem, CircularProgress, Avatar 
 } from '@mui/material';
 import { Support, Send, SmartToy, Person } from '@mui/icons-material';
-import axios from 'axios';
+import api from "../../api/axios";
 
 interface ChatMessage {
   id: number;
@@ -37,7 +37,7 @@ const Chatbot: React.FC = () => {
     setLoading(true);
 
     try {
-      const res = await axios.post('/ask', { question: text });
+      const res = await api.post('/ask', { question: text });
       const botMessage: ChatMessage = {
         id: Date.now() + 1,
         role: 'bot',

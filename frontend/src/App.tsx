@@ -13,6 +13,7 @@ import Posts from './pages/Posts/Posts';
 import Chatbot from './pages/Chatbot/Chatbot';
 import Emergency from './pages/Emergency/Emergency';
 import CompleteEquality from './pages/Equality/CompleteEquality';
+import EnhancedEquality from './pages/Equality/EnhancedEquality';
 import Equality from './pages/Equality/Equality';
 import Schemes from './pages/Schemes/Schemes';
 import Profile from './pages/Profile/Profile';
@@ -37,6 +38,11 @@ function App() {
   const { isAuthenticated, token } = useSelector((state: RootState) => state.auth);
 
   useEffect(() => {
+    // Log the API URL being used for debugging
+    const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+    console.log('🌐 API URL:', apiUrl);
+    console.log('🔧 Environment:', process.env.NODE_ENV);
+    
     if (isAuthenticated && token) {
       dispatch(getProfile());
     }
@@ -63,6 +69,7 @@ function App() {
         <Route path="posts" element={<Posts />} />
         <Route path="chatbot" element={<Chatbot />} />
         <Route path="complete-equality" element={<CompleteEquality />} />
+        <Route path="enhanced-equality" element={<EnhancedEquality />} />
         <Route path="emergency" element={<Emergency />} />
         <Route path="equality" element={<Equality />} />
         <Route path="schemes" element={<Schemes />} />
