@@ -107,7 +107,7 @@ const Posts: React.FC = () => {
   const [shareOpen, setShareOpen] = useState(false);
   const [sharePost, setSharePost] = useState<Post | null>(null);
   const [copiedOpen, setCopiedOpen] = useState(false);
-  
+
   // Delete state
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [postToDelete, setPostToDelete] = useState<Post | null>(null);
@@ -120,10 +120,13 @@ const Posts: React.FC = () => {
   }, [dispatch]);
 
   // ---------- Helper Functions ----------
-  const getPostUrl = (post: Post) => `${window.location.origin}/posts/${post.id}`;
+  const getPostUrl = (post: Post) =>
+    `${window.location.origin}/posts/${post.id}`;
   const getShareText = (post: Post) => {
     const by = post.is_anonymous ? "Anonymous" : post.author;
-    return `${post.title} — by ${by}\n\n${post.content}\n\nRead more: ${getPostUrl(post)}`;
+    return `${post.title} — by ${by}\n\n${
+      post.content
+    }\n\nRead more: ${getPostUrl(post)}`;
   };
 
   const handleShare = async (post: Post) => {
@@ -189,10 +192,19 @@ const Posts: React.FC = () => {
           headers: { "Content-Type": "multipart/form-data" },
         });
         setCreateDialogOpen(false);
-        setNewPost({ title: "", content: "", category: "", is_anonymous: false, image: null });
+        setNewPost({
+          title: "",
+          content: "",
+          category: "",
+          is_anonymous: false,
+          image: null,
+        });
         dispatch(fetchPosts({ page: 1, per_page: 10 }));
       } catch (error: any) {
-        console.error("Failed to create post:", error.response?.data || error.message);
+        console.error(
+          "Failed to create post:",
+          error.response?.data || error.message
+        );
       }
     }
   };
@@ -202,7 +214,10 @@ const Posts: React.FC = () => {
       await api.post(`/api/posts/${postId}/like`);
       dispatch(fetchPosts({ page: currentPage, per_page: 10 }));
     } catch (error: any) {
-      console.error("Failed to like post:", error.response?.data || error.message);
+      console.error(
+        "Failed to like post:",
+        error.response?.data || error.message
+      );
     }
   };
 
@@ -211,7 +226,10 @@ const Posts: React.FC = () => {
       const response = await api.get(`/api/posts/${postId}/comments`);
       return response.data.comments || [];
     } catch (error: any) {
-      console.error("Failed to fetch comments:", error.response?.data || error.message);
+      console.error(
+        "Failed to fetch comments:",
+        error.response?.data || error.message
+      );
       return [];
     }
   };
@@ -226,13 +244,18 @@ const Posts: React.FC = () => {
   const handleAddComment = async () => {
     if (!newComment.trim() || !selectedPostId) return;
     try {
-      await api.post(`/api/posts/${selectedPostId}/comments`, { content: newComment });
+      await api.post(`/api/posts/${selectedPostId}/comments`, {
+        content: newComment,
+      });
       const updatedComments = await fetchComments(selectedPostId);
       setComments(updatedComments);
       setNewComment("");
       dispatch(fetchPosts({ page: currentPage, per_page: 10 }));
     } catch (error: any) {
-      console.error("Failed to add comment:", error.response?.data || error.message);
+      console.error(
+        "Failed to add comment:",
+        error.response?.data || error.message
+      );
     }
   };
 
@@ -241,7 +264,10 @@ const Posts: React.FC = () => {
   };
 
   // ---------- Delete Handlers ----------
-  const handleMenuOpen = (event: React.MouseEvent<HTMLElement>, postId: number) => {
+  const handleMenuOpen = (
+    event: React.MouseEvent<HTMLElement>,
+    postId: number
+  ) => {
     setAnchorEl(event.currentTarget);
     setCurrentPostId(postId);
   };
@@ -259,7 +285,7 @@ const Posts: React.FC = () => {
 
   const handleDeleteConfirm = async () => {
     if (!postToDelete) return;
-    
+
     setDeleteLoading(true);
     try {
       await dispatch(deletePost(postToDelete.id)).unwrap();
@@ -268,7 +294,10 @@ const Posts: React.FC = () => {
       // Refresh posts after deletion
       dispatch(fetchPosts({ page: currentPage, per_page: 10 }));
     } catch (error: any) {
-      console.error("Failed to delete post:", error.response?.data || error.message);
+      console.error(
+        "Failed to delete post:",
+        error.response?.data || error.message
+      );
     } finally {
       setDeleteLoading(false);
     }
@@ -280,8 +309,9 @@ const Posts: React.FC = () => {
   };
 
   // Check if current user is the author of the post
+  const currentUser = useSelector((state: RootState) => state.auth.user);
+
   const isCurrentUserAuthor = (post: Post) => {
-    const currentUser = useSelector((state: RootState) => state.auth.user);
     // For anonymous posts, we can't determine authorship from frontend
     if (post.is_anonymous) return false;
     // Compare usernames to check if current user is the author
@@ -292,7 +322,14 @@ const Posts: React.FC = () => {
   return (
     <Box>
       {/* Header */}
-      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 3 }}>
+      <Box
+        sx={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          mb: 3,
+        }}
+      >
         <Typography variant="h4">Community Posts</Typography>
         <Button variant="contained" onClick={() => setCreateDialogOpen(true)}>
           <Add sx={{ mr: 1 }} /> Share Your Story
@@ -306,10 +343,21 @@ const Posts: React.FC = () => {
             <Card>
               <CardContent>
                 {/* Author Info */}
-                <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", mb: 2 }}>
+                <Box
+                  sx={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "flex-start",
+                    mb: 2,
+                  }}
+                >
                   <Box sx={{ display: "flex", alignItems: "center" }}>
                     <Avatar sx={{ mr: 2, bgcolor: "primary.main" }}>
-                      {post.is_anonymous ? <VisibilityOff /> : post.author.charAt(0).toUpperCase()}
+                      {post.is_anonymous ? (
+                        <VisibilityOff />
+                      ) : (
+                        post.author.charAt(0).toUpperCase()
+                      )}
                     </Avatar>
                     <Box>
                       <Typography variant="subtitle1" fontWeight="bold">
@@ -320,8 +368,8 @@ const Posts: React.FC = () => {
                       </Typography>
                     </Box>
                   </Box>
-                  <IconButton 
-                    size="small" 
+                  <IconButton
+                    size="small"
                     onClick={(e) => handleMenuOpen(e, post.id)}
                   >
                     <MoreVert />
@@ -329,35 +377,81 @@ const Posts: React.FC = () => {
                 </Box>
 
                 {/* Post Content */}
-                <Typography variant="h6" gutterBottom>{post.title}</Typography>
-                <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>{post.content}</Typography>
+                <Typography variant="h6" gutterBottom>
+                  {post.title}
+                </Typography>
+                <Typography
+                  variant="body1"
+                  color="text.secondary"
+                  sx={{ mb: 2 }}
+                >
+                  {post.content}
+                </Typography>
 
                 {/* Post Image */}
                 {post.image_url && (
                   <Box sx={{ mt: 2, textAlign: "center" }}>
                     <img
-                      src={`${process.env.REACT_APP_API_URL || 'http://localhost:5000'}${post.image_url}`}
+                      src={`${
+                        process.env.REACT_APP_API_URL || "http://localhost:5000"
+                      }${post.image_url}`}
                       alt="post"
-                      style={{ width: "70%", aspectRatio: "1/1", objectFit: "cover", borderRadius: "12px", maxHeight: "280px" }}
+                      style={{
+                        width: "70%",
+                        aspectRatio: "1/1",
+                        objectFit: "cover",
+                        borderRadius: "12px",
+                        maxHeight: "280px",
+                      }}
                     />
                   </Box>
                 )}
 
                 {/* Category & Tags */}
-                <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 2 }}>
-                  <Chip label={post.category} size="small" sx={{ bgcolor: getCategoryColor(post.category), color: "white" }} />
-                  {post.is_anonymous && <Chip icon={<VisibilityOff />} label="Anonymous" size="small" variant="outlined" />}
+                <Box
+                  sx={{ display: "flex", alignItems: "center", gap: 1, mb: 2 }}
+                >
+                  <Chip
+                    label={post.category}
+                    size="small"
+                    sx={{
+                      bgcolor: getCategoryColor(post.category),
+                      color: "white",
+                    }}
+                  />
+                  {post.is_anonymous && (
+                    <Chip
+                      icon={<VisibilityOff />}
+                      label="Anonymous"
+                      size="small"
+                      variant="outlined"
+                    />
+                  )}
                 </Box>
 
                 {/* Like + Comment + Share */}
                 <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-                  <Button size="small" variant="outlined" onClick={() => handleLike(post.id)}>
-                    <ThumbUp sx={{ mr: 1 }} /> {post.likes} Like{post.likes !== 1 ? "s" : ""}
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={() => handleLike(post.id)}
+                  >
+                    <ThumbUp sx={{ mr: 1 }} /> {post.likes} Like
+                    {post.likes !== 1 ? "s" : ""}
                   </Button>
-                  <Button size="small" variant="outlined" onClick={() => handleOpenComments(post.id)}>
-                    <Comment sx={{ mr: 1 }} /> {post.comments_count} Comment{post.comments_count !== 1 ? "s" : ""}
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={() => handleOpenComments(post.id)}
+                  >
+                    <Comment sx={{ mr: 1 }} /> {post.comments_count} Comment
+                    {post.comments_count !== 1 ? "s" : ""}
                   </Button>
-                  <Button size="small" variant="outlined" onClick={() => handleShare(post)}>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={() => handleShare(post)}
+                  >
                     <Share sx={{ mr: 1 }} /> Share
                   </Button>
                 </Box>
@@ -370,13 +464,22 @@ const Posts: React.FC = () => {
                       post.latest_comments.map((c, i) => (
                         <ListItem key={i}>
                           <ListItemAvatar>
-                            <Avatar>{c.author ? c.author.charAt(0).toUpperCase() : "A"}</Avatar>
+                            <Avatar>
+                              {c.author
+                                ? c.author.charAt(0).toUpperCase()
+                                : "A"}
+                            </Avatar>
                           </ListItemAvatar>
-                          <ListItemText primary={c.author || "Anonymous"} secondary={c.content} />
+                          <ListItemText
+                            primary={c.author || "Anonymous"}
+                            secondary={c.content}
+                          />
                         </ListItem>
                       ))
                     ) : (
-                      <Typography variant="body2" color="text.secondary">No comments yet.</Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        No comments yet.
+                      </Typography>
                     )}
                   </List>
                 </Box>
@@ -389,21 +492,36 @@ const Posts: React.FC = () => {
       {/* Pagination */}
       {totalPages > 1 && (
         <Box sx={{ display: "flex", justifyContent: "center", mt: 4 }}>
-          <Pagination count={totalPages} page={currentPage} onChange={handlePageChange} color="primary" />
+          <Pagination
+            count={totalPages}
+            page={currentPage}
+            onChange={handlePageChange}
+            color="primary"
+          />
         </Box>
       )}
 
       {/* Comment Dialog */}
-      <Dialog open={commentDialogOpen} onClose={() => setCommentDialogOpen(false)} maxWidth="sm" fullWidth>
+      <Dialog
+        open={commentDialogOpen}
+        onClose={() => setCommentDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
         <DialogTitle>Comments</DialogTitle>
         <DialogContent>
           <List>
             {comments.map((c, index) => (
               <ListItem key={index} alignItems="flex-start">
                 <ListItemAvatar>
-                  <Avatar>{c.author ? c.author.charAt(0).toUpperCase() : "A"}</Avatar>
+                  <Avatar>
+                    {c.author ? c.author.charAt(0).toUpperCase() : "A"}
+                  </Avatar>
                 </ListItemAvatar>
-                <ListItemText primary={c.author || "Anonymous"} secondary={c.content} />
+                <ListItemText
+                  primary={c.author || "Anonymous"}
+                  secondary={c.content}
+                />
               </ListItem>
             ))}
           </List>
@@ -418,12 +536,19 @@ const Posts: React.FC = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setCommentDialogOpen(false)}>Close</Button>
-          <Button variant="contained" onClick={handleAddComment}>Post Comment</Button>
+          <Button variant="contained" onClick={handleAddComment}>
+            Post Comment
+          </Button>
         </DialogActions>
       </Dialog>
 
       {/* Create Post Dialog */}
-      <Dialog open={createDialogOpen} onClose={() => setCreateDialogOpen(false)} maxWidth="md" fullWidth>
+      <Dialog
+        open={createDialogOpen}
+        onClose={() => setCreateDialogOpen(false)}
+        maxWidth="md"
+        fullWidth
+      >
         <DialogTitle>
           <Box sx={{ display: "flex", alignItems: "center" }}>
             <Article sx={{ mr: 1, color: "primary.main" }} /> Share Your Story
@@ -431,7 +556,8 @@ const Posts: React.FC = () => {
         </DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            Share your experience, ask for advice, or support others in the community.
+            Share your experience, ask for advice, or support others in the
+            community.
           </Typography>
 
           <TextField
@@ -449,7 +575,9 @@ const Posts: React.FC = () => {
             label="Your Story"
             placeholder="Share your experience..."
             value={newPost.content}
-            onChange={(e) => setNewPost({ ...newPost, content: e.target.value })}
+            onChange={(e) =>
+              setNewPost({ ...newPost, content: e.target.value })
+            }
             sx={{ mb: 2 }}
           />
 
@@ -459,43 +587,69 @@ const Posts: React.FC = () => {
               type="file"
               accept="image/*"
               hidden
-              onChange={(e) => setNewPost({ ...newPost, image: e.target.files?.[0] || null })}
+              onChange={(e) =>
+                setNewPost({ ...newPost, image: e.target.files?.[0] || null })
+              }
             />
           </Button>
-          {newPost.image && <Typography variant="caption">{newPost.image.name}</Typography>}
+          {newPost.image && (
+            <Typography variant="caption">{newPost.image.name}</Typography>
+          )}
 
           <FormControl fullWidth sx={{ mb: 2 }}>
             <InputLabel>Category</InputLabel>
             <Select
               value={newPost.category}
               label="Category"
-              onChange={(e) => setNewPost({ ...newPost, category: e.target.value })}
+              onChange={(e) =>
+                setNewPost({ ...newPost, category: e.target.value })
+              }
             >
               {categories.map((category) => (
-                <MenuItem key={category} value={category}>{category}</MenuItem>
+                <MenuItem key={category} value={category}>
+                  {category}
+                </MenuItem>
               ))}
             </Select>
           </FormControl>
 
           <FormControlLabel
-            control={<Switch checked={newPost.is_anonymous} onChange={(e) => setNewPost({ ...newPost, is_anonymous: e.target.checked })} />}
+            control={
+              <Switch
+                checked={newPost.is_anonymous}
+                onChange={(e) =>
+                  setNewPost({ ...newPost, is_anonymous: e.target.checked })
+                }
+              />
+            }
             label="Post anonymously"
           />
 
           <Alert severity="info" sx={{ mt: 2 }}>
-            <strong>Privacy:</strong> Anonymous posts help protect your identity while still allowing you to share your experiences and get support from the community.
+            <strong>Privacy:</strong> Anonymous posts help protect your identity
+            while still allowing you to share your experiences and get support
+            from the community.
           </Alert>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setCreateDialogOpen(false)}>Cancel</Button>
-          <Button variant="contained" onClick={handleCreatePost} disabled={!newPost.title || !newPost.content || !newPost.category}>
+          <Button
+            variant="contained"
+            onClick={handleCreatePost}
+            disabled={!newPost.title || !newPost.content || !newPost.category}
+          >
             Share Post
           </Button>
         </DialogActions>
       </Dialog>
 
       {/* Share Dialog */}
-      <Dialog open={shareOpen} onClose={() => setShareOpen(false)} maxWidth="xs" fullWidth>
+      <Dialog
+        open={shareOpen}
+        onClose={() => setShareOpen(false)}
+        maxWidth="xs"
+        fullWidth
+      >
         <DialogTitle>Share Post</DialogTitle>
         <DialogContent dividers>
           <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
@@ -509,7 +663,9 @@ const Posts: React.FC = () => {
               onClick={() => {
                 if (!sharePost) return;
                 const text = getShareText(sharePost);
-                const wa = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
+                const wa = `https://api.whatsapp.com/send?text=${encodeURIComponent(
+                  text
+                )}`;
                 window.open(wa, "_blank");
               }}
             >
@@ -523,7 +679,9 @@ const Posts: React.FC = () => {
                 if (!sharePost) return;
                 const subject = `Check this post: ${sharePost.title}`;
                 const body = getShareText(sharePost);
-                const mailto = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+                const mailto = `mailto:?subject=${encodeURIComponent(
+                  subject
+                )}&body=${encodeURIComponent(body)}`;
                 window.location.href = mailto;
               }}
             >
@@ -560,20 +718,21 @@ const Posts: React.FC = () => {
         <DialogTitle>Delete Post</DialogTitle>
         <DialogContent>
           <Typography>
-            Are you sure you want to delete this post? This action cannot be undone.
+            Are you sure you want to delete this post? This action cannot be
+            undone.
           </Typography>
         </DialogContent>
         <DialogActions>
           <Button onClick={handleDeleteCancel} disabled={deleteLoading}>
             Cancel
           </Button>
-          <Button 
-            onClick={handleDeleteConfirm} 
-            color="error" 
+          <Button
+            onClick={handleDeleteConfirm}
+            color="error"
             disabled={deleteLoading}
             startIcon={deleteLoading ? <CircularProgress size={20} /> : null}
           >
-            {deleteLoading ? 'Deleting...' : 'Delete'}
+            {deleteLoading ? "Deleting..." : "Delete"}
           </Button>
         </DialogActions>
       </Dialog>
@@ -584,15 +743,22 @@ const Posts: React.FC = () => {
         open={Boolean(anchorEl)}
         onClose={handleMenuClose}
       >
-        {currentPostId && posts.find(post => post.id === currentPostId) && 
-          isCurrentUserAuthor(posts.find(post => post.id === currentPostId)!) && (
-          <MenuItem 
-            onClick={() => handleDeleteClick(posts.find(post => post.id === currentPostId)!)}
-            sx={{ color: 'error.main' }}
-          >
-            <Delete sx={{ mr: 1 }} /> Delete Post
-          </MenuItem>
-        )}
+        {currentPostId &&
+          posts.find((post) => post.id === currentPostId) &&
+          isCurrentUserAuthor(
+            posts.find((post) => post.id === currentPostId)!
+          ) && (
+            <MenuItem
+              onClick={() =>
+                handleDeleteClick(
+                  posts.find((post) => post.id === currentPostId)!
+                )
+              }
+              sx={{ color: "error.main" }}
+            >
+              <Delete sx={{ mr: 1 }} /> Delete Post
+            </MenuItem>
+          )}
       </Menu>
     </Box>
   );
