@@ -39,6 +39,7 @@ import {
 } from '@mui/icons-material';
 import { RootState, AppDispatch } from '../../store/index';
 import { fetchNearbyHelp, sendEmergencyAlert } from '../../store/slices/emergencySlice';
+import SOSButton from '../../components/SOS/SOSButton';
 
 const Emergency: React.FC = () => {
   const [emergencyDialogOpen, setEmergencyDialogOpen] = useState(false);
@@ -114,6 +115,14 @@ const Emergency: React.FC = () => {
       >
         <strong>EMERGENCY:</strong> If you're in immediate danger, use the emergency button or call 100 immediately.
       </Alert>
+
+      {/* SOS Button */}
+      <Box sx={{ mb: 3, textAlign: 'center' }}>
+        <SOSButton size="large" />
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+          Press for immediate emergency alert to your contacts
+        </Typography>
+      </Box>
 
       <Grid container spacing={3}>
         {/* Emergency Contacts */}

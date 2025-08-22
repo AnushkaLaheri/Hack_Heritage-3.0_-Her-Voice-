@@ -7,6 +7,13 @@ interface Preferences {
   [key: string]: any;
 }
 
+interface EmergencyContact {
+  id: number;
+  name: string;
+  phone: string;
+  relationship?: string;
+}
+
 interface User {
   id: number;
   username: string;
@@ -17,6 +24,7 @@ interface User {
   location?: string;
   profile_image?: string | null;
   preferences?: Preferences;
+  emergency_contacts?: EmergencyContact[];
 }
 
 interface AuthState {

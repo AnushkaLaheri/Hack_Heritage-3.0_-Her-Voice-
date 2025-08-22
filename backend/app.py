@@ -21,6 +21,7 @@ from werkzeug.utils import secure_filename
 from flask import send_from_directory
 from groq import Groq
 import sqlite3
+from twilio.rest import Client
 
 
 # Load environment variables
@@ -42,8 +43,16 @@ app.config['MAIL_USE_TLS'] = True
 app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME')
 app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')
 
+
 # OpenAI configuration
 openai.api_key = os.getenv('OPENAI_API_KEY')
+
+account_sid = os.getenv("TWILIO_ACCOUNT_SID")
+auth_token = os.getenv("TWILIO_AUTH_TOKEN")
+twilio_phone = os.getenv("TWILIO_PHONE")
+
+twilio_client = Client(account_sid, auth_token)
+
 
 # Initialize extensions
 db = SQLAlchemy(app)
@@ -84,10 +93,21 @@ class User(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     otp = db.Column(db.String(6), nullable=True)
     otp_created_at = db.Column(db.DateTime, nullable=True) 
+    emergency_contact=db.relationship("EmergencyContact", backref="user", lazy=True )
     
     # Relationships
     posts = db.relationship('Post', backref='author', lazy=True)
     comments = db.relationship('Comment', backref='author', lazy=True)
+
+    # models.py
+class SOSLog(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    latitude = db.Column(db.Float, nullable=False)
+    longitude = db.Column(db.Float, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    ended_at = db.Column(db.DateTime, nullable=True)
+    user = db.relationship('User', backref='sos_logs')
 
 class Post(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -445,6 +465,202 @@ def ask_database_or_chat(query):
 
     finally:
         conn.close()
+
+
+
+
+
+@app.route("/check_twilio")
+def check_twilio():
+    return {
+        "sid": account_sid,
+        "phone": twilio_phone
+    }
+
+
+
+
+
+
+@app.route("/api/sos/start", methods=["POST"])
+def start_sos():
+    data = request.get_json()
+    user_id = data.get("user_id")
+    latitude = data.get("latitude")
+    longitude = data.get("longitude")
+
+    if not user_id:
+        return jsonify({"error": "User ID is required"}), 400
+
+    # ✅ User verify karo
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    # Get current location if not provided
+    if not latitude or not longitude:
+        # For now, use default coordinates - in production, this should be handled by frontend
+        latitude = 0.0
+        longitude = 0.0
+
+    # ✅ SOS log save karo
+    sos = SOSLog(
+        user_id=user.id,
+        latitude=latitude,
+        longitude=longitude,
+        created_at=datetime.utcnow()
+    )
+    db.session.add(sos)
+    db.session.commit()
+
+    # ✅ Google Maps link banao
+    maps_link = f"https://www.google.com/maps?q={latitude},{longitude}"
+
+    # ✅ Emergency contacts fetch karo
+    contacts = EmergencyContact.query.filter_by(user_id=user.id).all()
+
+    if not contacts:
+        return jsonify({"message": "SOS started but no emergency contacts found", "sos_id": sos.id}), 200
+
+    # ✅ Har ek contact ko SMS bhejo
+    sent_count = 0
+    for contact in contacts:
+        try:
+            if account_sid and auth_token and twilio_phone:
+                twilio_client.messages.create(
+                    body=f"🚨 SOS Alert! {user.username} needs help.\nLocation: {maps_link}\nContact: {user.phone or 'Not provided'}",
+                    from_=twilio_phone,
+                    to=contact.phone
+                )
+                sent_count += 1
+            else:
+                print(f"Twilio not configured - would send SMS to {contact.phone}")
+        except Exception as e:
+            print(f"Failed to send SMS to {contact.phone}: {e}")
+
+    return jsonify({
+        "message": f"SOS started, {sent_count} contacts notified", 
+        "sos_id": sos.id,
+        "contacts_notified": sent_count,
+        "total_contacts": len(contacts)
+    }), 200
+
+
+
+# Get user's emergency contacts
+@app.route('/api/emergency/contacts/<int:user_id>', methods=['GET'])
+def get_contacts(user_id):
+    contacts = EmergencyContact.query.filter_by(user_id=user_id).all()
+    return jsonify([{
+        "id": c.id,
+        "name": c.name,
+        "phone": c.phone,
+        "relationship": c.relationship
+    } for c in contacts])
+
+# Add a new emergency contact
+@app.route('/api/emergency/contacts', methods=['POST'])
+def add_contact():
+    data = request.json
+    contact = EmergencyContact(
+        user_id=data["user_id"],
+        name=data["name"],
+        phone=data["phone"],
+        relationship=data.get("relationship")
+    )
+    db.session.add(contact)
+    db.session.commit()
+    return jsonify({"success": True, "contact": {
+        "id": contact.id,
+        "name": contact.name,
+        "phone": contact.phone,
+        "relationship": contact.relationship
+    }})
+
+# Optional: Delete a contact
+@app.route('/api/emergency/contacts/<int:contact_id>', methods=['DELETE'])
+def delete_contact(contact_id):
+    contact = EmergencyContact.query.get(contact_id)
+    if not contact:
+        return jsonify({"success": False, "message": "Contact not found"}), 404
+    db.session.delete(contact)
+    db.session.commit()
+    return jsonify({"success": True})
+
+
+
+
+
+
+@app.route("/api/sos/active/<int:user_id>", methods=["GET"])
+def get_active_sos(user_id):
+    sos = SOSLog.query.filter_by(user_id=user_id, ended_at=None).order_by(SOSLog.created_at.desc()).first()
+    if sos:
+        return jsonify({
+            "active": True,
+            "sos_id": sos.id,
+            "latitude": sos.latitude,
+            "longitude": sos.longitude,
+            "created_at": sos.created_at.isoformat()
+        })
+    return jsonify({"active": False})
+
+
+@app.route("/api/sos/stop", methods=["POST"])
+def stop_sos():
+    data = request.get_json()
+    sos_id = data.get("sos_id")
+
+    sos = SOSLog.query.get(sos_id)
+    if not sos:
+        return jsonify({"error": "SOS not found"}), 404
+
+    sos.ended_at = datetime.utcnow()  # 👈 Add this column in SOSLog
+    db.session.commit()
+    return jsonify({"message": "SOS stopped"}),200
+
+@app.route("/api/sos/update", methods=["POST"])
+def update_sos_location():
+    data = request.get_json()
+    sos_id = data.get("sos_id")
+    latitude = data.get("latitude")
+    longitude = data.get("longitude")
+
+    if not sos_id or not latitude or not longitude:
+        return jsonify({"error": "Missing data"}), 400
+
+    # SOS log fetch karo
+    sos = SOSLog.query.get(sos_id)
+    if not sos:
+        return jsonify({"error": "SOS not found"}), 404
+
+    # SOS active hona chahiye
+    if sos.ended_at:
+        return jsonify({"error": "SOS is already stopped"}), 400
+
+    # Location update kar do
+    sos.latitude = latitude
+    sos.longitude = longitude
+    db.session.commit()
+
+    return jsonify({"message": "Location updated successfully"}), 200
+
+@app.route("/api/sos/live/<int:user_id>", methods=["GET"])
+def live_sos_location(user_id):
+    # Active SOS fetch karo
+    sos = SOSLog.query.filter_by(user_id=user_id, ended_at=None).order_by(SOSLog.created_at.desc()).first()
+    if not sos:
+        return jsonify({"error": "No active SOS"}), 404
+
+    # Location return karo JSON me
+    return jsonify({
+        "latitude": sos.latitude,
+        "longitude": sos.longitude,
+        "username": sos.user.username,
+        "created_at": sos.created_at.isoformat()
+    })
+
+
 @app.route("/ask", methods=["POST"])
 def ask():
     data = request.get_json()
@@ -981,6 +1197,29 @@ def like_post(post_id):
     db.session.commit()
     return jsonify({"liked": True, "likes": post.likes_count}), 200
 
+
+# DELETE a post
+@app.route('/api/posts/<int:post_id>', methods=['DELETE'])
+@jwt_required()
+def delete_post(post_id):
+    user_id = get_jwt_identity()
+    post = Post.query.get_or_404(post_id)
+
+    # ✅ Only the author can delete their post
+    if post.user_id != user_id:
+        return jsonify({"error": "Unauthorized: You can only delete your own posts"}), 403
+
+    # Delete associated comments and likes first (cascade safety)
+    Comment.query.filter_by(post_id=post_id).delete()
+    Like.query.filter_by(post_id=post_id).delete()
+
+    # Delete the post itself
+    db.session.delete(post)
+    db.session.commit()
+
+    return jsonify({"message": "Post deleted successfully!"}), 200
+
+
 @app.route('/api/posts', methods=['POST'])
 @jwt_required()
 def create_post():
@@ -1008,13 +1247,17 @@ def create_post():
             filepath = os.path.join(upload_dir, filename)
             image.save(filepath)
 
+            # Save URL path for frontend
+            image_url = f"/{upload_dir}/{filename}"
+
+
     
     post = Post(
         title=title,
         content=content,
         category=category,
         is_anonymous=is_anonymous,
-        image_url=f"/{upload_dir}/{filename}" if filename else None,
+        image_url=image_url,
         user_id=user_id
     )
     
@@ -1326,6 +1569,9 @@ def get_profile():
     user_id = get_jwt_identity()
     user = User.query.get(user_id)
     
+    # Get emergency contacts
+    emergency_contacts = EmergencyContact.query.filter_by(user_id=user_id).all()
+    
     return jsonify({
         'id': user.id,
         'username': user.username,
@@ -1336,7 +1582,13 @@ def get_profile():
         'profile_image': user.profile_image,
         'preferences': user.preferences or {},
         'is_verified': user.is_verified,
-        'created_at': user.created_at.isoformat()
+        'created_at': user.created_at.isoformat(),
+        'emergency_contacts': [{
+            'id': contact.id,
+            'name': contact.name,
+            'phone': contact.phone,
+            'relationship': contact.relationship
+        } for contact in emergency_contacts]
     }), 200
 
 @app.route('/api/user/profile', methods=['PUT'])
@@ -1356,6 +1608,44 @@ def update_profile():
     db.session.commit()
     
     return jsonify({'message': 'Profile updated successfully'}), 200
+
+# Update emergency contact endpoint
+@app.route('/api/profile/emergency-contact', methods=['PUT'])
+@jwt_required()
+def update_emergency_contact():
+    user_id = get_jwt_identity()
+    data = request.get_json()
+    
+    # Validate required fields
+    if not data.get('name') or not data.get('phone'):
+        return jsonify({'error': 'Name and phone are required'}), 400
+    
+    # Validate phone number (10 digits)
+    phone = data['phone'].replace(' ', '').replace('-', '')
+    if not phone.isdigit() or len(phone) != 10:
+        return jsonify({'error': 'Phone number must be exactly 10 digits'}), 400
+    
+    # Check if user already has an emergency contact
+    existing_contact = EmergencyContact.query.filter_by(user_id=user_id).first()
+    
+    if existing_contact:
+        # Update existing contact
+        existing_contact.name = data['name']
+        existing_contact.phone = phone
+        existing_contact.relationship = data.get('relationship')
+    else:
+        # Create new emergency contact
+        contact = EmergencyContact(
+            user_id=user_id,
+            name=data['name'],
+            phone=phone,
+            relationship=data.get('relationship')
+        )
+        db.session.add(contact)
+    
+    db.session.commit()
+    
+    return jsonify({'message': 'Emergency contact updated successfully'}), 200
 
 # Extended Profile routes
 @app.route('/api/profile/<int:user_id>', methods=['GET'])

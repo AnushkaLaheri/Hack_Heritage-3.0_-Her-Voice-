@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import {
   Grid,
@@ -32,6 +32,7 @@ import { RootState, AppDispatch } from '../../store/index';
 import { fetchPosts } from '../../store/slices/postsSlice';
 import { fetchNearbyHelp } from '../../store/slices/emergencySlice';
 import { fetchDashboard } from '../../store/slices/equalitySlice';
+import SOSButton from '../../components/SOS/SOSButton';
 
 const Home: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
@@ -39,6 +40,107 @@ const Home: React.FC = () => {
   const { posts } = useSelector((state: RootState) => state.posts);
   const { nearbyPlaces } = useSelector((state: RootState) => state.emergency);
   const { dashboard } = useSelector((state: RootState) => state.equality);
+
+  const [sosActive, setSosActive] = useState(false);
+  const sosInterval = useRef<NodeJS.Timeout | null>(null);
+
+  const handleSOS = async () => {
+    if (!user) return;
+    
+    // Get current location
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(async (position) => {
+        const latitude = position.coords.latitude;
+        const longitude = position.coords.longitude;
+        
+        try {
+          const res = await fetch("http://127.0.0.1:5000/api/sos/start", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ 
+              user_id: user.id,
+              latitude,
+              longitude 
+            }),
+          });
+          const data = await res.json();
+          console.log("SOS Started:", data);
+          
+          // Show success message with contact info
+          if (data.contacts_notified > 0) {
+            alert(`SOS Alert sent! ${data.contacts_notified} emergency contacts have been notified.`);
+          } else {
+            alert("SOS Alert started, but no emergency contacts found. Please add emergency contacts in your profile.");
+          }
+        } catch (err) {
+          console.error("SOS start error:", err);
+          alert("Failed to send SOS alert. Please try again.");
+        }
+      }, (error) => {
+        console.error("Location error:", error);
+        // Fallback: send SOS without location
+        handleSOSWithoutLocation();
+      });
+    } else {
+      // Fallback: send SOS without location
+      handleSOSWithoutLocation();
+    }
+  };
+
+  const handleSOSWithoutLocation = async () => {
+    try {
+      const res = await fetch("http://127.0.0.1:5000/api/sos/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: user?.id }),
+      });
+      const data = await res.json();
+      console.log("SOS Started:", data);
+      
+      if (data.contacts_notified > 0) {
+        alert(`SOS Alert sent! ${data.contacts_notified} emergency contacts have been notified.`);
+      } else {
+        alert("SOS Alert started, but no emergency contacts found. Please add emergency contacts in your profile.");
+      }
+    } catch (err) {
+      console.error("SOS start error:", err);
+      alert("Failed to send SOS alert. Please try again.");
+    }
+  };
+
+  const startLiveSOS = () => {
+    if (!user) return;
+    setSosActive(true);
+
+    sosInterval.current = setInterval(() => {
+      if (!navigator.geolocation) return;
+
+      navigator.geolocation.getCurrentPosition(async (position) => {
+        const latitude = position.coords.latitude;
+        const longitude = position.coords.longitude;
+
+        try {
+          await fetch("http://127.0.0.1:5000/api/sos/update", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              user_id: user.id,
+              latitude,
+              longitude,
+            }),
+          });
+        } catch (err) {
+          console.error("Live SOS update error:", err);
+        }
+      });
+    }, 5000);
+  };
+
+  const stopLiveSOS = () => {
+    if (sosInterval.current) clearInterval(sosInterval.current);
+    setSosActive(false);
+    alert("SOS tracking stopped");
+  };
 
   useEffect(() => {
     dispatch(fetchPosts({ page: 1, per_page: 5 }));
@@ -90,12 +192,17 @@ const Home: React.FC = () => {
       {/* Welcome Section */}
       <Paper sx={{ p: 3, mb: 3, background: 'linear-gradient(135deg, #e91e63 0%, #9c27b0 100%)', color: 'white' }}>
         <Typography variant="h4" gutterBottom>
-          Welcome back, {user?.username}!
+          Welcome back, {user?.username || "User"}!
         </Typography>
         <Typography variant="body1">
           You're part of a community of {user?.role === 'Volunteer' ? 'volunteers' : 'women'} supporting each other.
         </Typography>
       </Paper>
+
+      {/* SOS Button */}
+      <Box sx={{ mb: 3, textAlign: 'center' }}>
+        <SOSButton size="large" />
+      </Box>
 
       {/* Quick Actions */}
       <Typography variant="h5" gutterBottom sx={{ mb: 2 }}>
@@ -153,21 +260,21 @@ const Home: React.FC = () => {
                       <ListItemText
                         primary={post.title}
                         secondary={
-                          <Box>
-                            <Typography variant="body2" color="text.secondary">
+                          <React.Fragment>
+                            <span style={{ display: 'block', marginBottom: '8px' }}>
                               {post.content.substring(0, 100)}...
-                            </Typography>
-                            <Box sx={{ mt: 1 }}>
+                            </span>
+                            <div style={{ marginTop: '8px' }}>
                               <Chip 
                                 label={post.category} 
                                 size="small" 
                                 sx={{ mr: 1 }}
                               />
-                              <Typography variant="caption" color="text.secondary">
+                              <span style={{ fontSize: '0.75rem', color: 'rgba(0, 0, 0, 0.6)' }}>
                                 {new Date(post.created_at).toLocaleDateString()}
-                              </Typography>
-                            </Box>
-                          </Box>
+                              </span>
+                            </div>
+                          </React.Fragment>
                         }
                       />
                     </ListItem>
@@ -225,14 +332,14 @@ const Home: React.FC = () => {
                           <ListItemText
                             primary={place.name}
                             secondary={
-                              <Box>
-                                <Typography variant="body2" color="text.secondary">
+                              <React.Fragment>
+                                <span style={{ display: 'block' }}>
                                   {place.distance} • {place.type}
-                                </Typography>
-                                <Typography variant="caption" color="text.secondary">
+                                </span>
+                                <span style={{ fontSize: '0.75rem', color: 'rgba(0, 0, 0, 0.6)' }}>
                                   {place.phone}
-                                </Typography>
-                              </Box>
+                                </span>
+                              </React.Fragment>
                             }
                           />
                         </ListItem>

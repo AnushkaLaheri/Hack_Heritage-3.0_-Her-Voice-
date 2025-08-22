@@ -30,6 +30,7 @@ import {
   Menu,
   Snackbar,
   Tooltip,
+  CircularProgress,
 } from "@mui/material";
 import {
   Add,
@@ -42,9 +43,10 @@ import {
   WhatsApp,
   Email,
   Link as LinkIcon,
+  Delete,
 } from "@mui/icons-material";
 import { RootState, AppDispatch } from "../../store/index";
-import { fetchPosts } from "../../store/slices/postsSlice";
+import { fetchPosts, deletePost } from "../../store/slices/postsSlice";
 import api from "../../api/axios";
 
 // ✅ Define Post type
@@ -105,6 +107,13 @@ const Posts: React.FC = () => {
   const [shareOpen, setShareOpen] = useState(false);
   const [sharePost, setSharePost] = useState<Post | null>(null);
   const [copiedOpen, setCopiedOpen] = useState(false);
+  
+  // Delete state
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [postToDelete, setPostToDelete] = useState<Post | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const [currentPostId, setCurrentPostId] = useState<number | null>(null);
 
   useEffect(() => {
     dispatch(fetchPosts({ page: 1, per_page: 10 }));
@@ -231,6 +240,54 @@ const Posts: React.FC = () => {
     dispatch(fetchPosts({ page, per_page: 10 }));
   };
 
+  // ---------- Delete Handlers ----------
+  const handleMenuOpen = (event: React.MouseEvent<HTMLElement>, postId: number) => {
+    setAnchorEl(event.currentTarget);
+    setCurrentPostId(postId);
+  };
+
+  const handleMenuClose = () => {
+    setAnchorEl(null);
+    setCurrentPostId(null);
+  };
+
+  const handleDeleteClick = (post: Post) => {
+    setPostToDelete(post);
+    setDeleteDialogOpen(true);
+    handleMenuClose();
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!postToDelete) return;
+    
+    setDeleteLoading(true);
+    try {
+      await dispatch(deletePost(postToDelete.id)).unwrap();
+      setDeleteDialogOpen(false);
+      setPostToDelete(null);
+      // Refresh posts after deletion
+      dispatch(fetchPosts({ page: currentPage, per_page: 10 }));
+    } catch (error: any) {
+      console.error("Failed to delete post:", error.response?.data || error.message);
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  const handleDeleteCancel = () => {
+    setDeleteDialogOpen(false);
+    setPostToDelete(null);
+  };
+
+  // Check if current user is the author of the post
+  const isCurrentUserAuthor = (post: Post) => {
+    const currentUser = useSelector((state: RootState) => state.auth.user);
+    // For anonymous posts, we can't determine authorship from frontend
+    if (post.is_anonymous) return false;
+    // Compare usernames to check if current user is the author
+    return currentUser?.username === post.author;
+  };
+
   // ---------- Render ----------
   return (
     <Box>
@@ -263,7 +320,10 @@ const Posts: React.FC = () => {
                       </Typography>
                     </Box>
                   </Box>
-                  <IconButton size="small">
+                  <IconButton 
+                    size="small" 
+                    onClick={(e) => handleMenuOpen(e, post.id)}
+                  >
                     <MoreVert />
                   </IconButton>
                 </Box>
@@ -494,6 +554,46 @@ const Posts: React.FC = () => {
         onClose={() => setCopiedOpen(false)}
         message="Link copied to clipboard"
       />
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteDialogOpen} onClose={handleDeleteCancel}>
+        <DialogTitle>Delete Post</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Are you sure you want to delete this post? This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleDeleteCancel} disabled={deleteLoading}>
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleDeleteConfirm} 
+            color="error" 
+            disabled={deleteLoading}
+            startIcon={deleteLoading ? <CircularProgress size={20} /> : null}
+          >
+            {deleteLoading ? 'Deleting...' : 'Delete'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Three-dot Menu */}
+      <Menu
+        anchorEl={anchorEl}
+        open={Boolean(anchorEl)}
+        onClose={handleMenuClose}
+      >
+        {currentPostId && posts.find(post => post.id === currentPostId) && 
+          isCurrentUserAuthor(posts.find(post => post.id === currentPostId)!) && (
+          <MenuItem 
+            onClick={() => handleDeleteClick(posts.find(post => post.id === currentPostId)!)}
+            sx={{ color: 'error.main' }}
+          >
+            <Delete sx={{ mr: 1 }} /> Delete Post
+          </MenuItem>
+        )}
+      </Menu>
     </Box>
   );
 };
